@@ -7,7 +7,6 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/sha512"
 	"crypto/subtle"
 	"fmt"
 	"hash"
@@ -17,7 +16,6 @@ import (
 
 type PublicKey struct {
 	Curve elliptic.Curve
-	ID    []byte
 	X, Y  *big.Int
 }
 
@@ -53,7 +51,7 @@ type cipherCreator func([]byte) (cipher.Block, error)
 type hashCreator func() hash.Hash
 
 type signcrypter struct {
-	blockSize     int
+	securityLevel int
 	curve         elliptic.Curve
 	hashCreator   hashCreator
 	cipherCreator cipherCreator
@@ -69,6 +67,7 @@ type SigncryptionOutput struct {
 
 func (s *signcrypter) Signcrypt(source *PrivateKey, dest *PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error) {
 	prime := s.curve.Params().P
+	nMod := s.curve.Params().N
 
 	// choose random v
 	vBytes := make([]byte, s.curve.Params().BitSize/8)
@@ -83,21 +82,26 @@ func (s *signcrypter) Signcrypt(source *PrivateKey, dest *PublicKey, plaintext, 
 	rMarshaled := elliptic.Marshal(s.curve, xR, yR)
 
 	// compute point p
-	p := new(big.Int)
-	p.Add(v, source.V)
-	p.Mod(p, prime)
+	p := new(big.Int).Add(v, source.V)
+	p.Mod(p, nMod)
 
 	// compute Q
 	xQ, yQ := s.curve.ScalarMult(dest.X, dest.Y, p.Bytes())
 
-	hash := s.hashCreator()
-
 	// compute session key
+	hash := s.hashCreator()
 	hash.Write(xQ.Bytes())
-	hash.Write(source.ID)
+	hash.Write(source.X.Bytes())
 	hash.Write(yQ.Bytes())
-	hash.Write(dest.ID)
+	hash.Write(dest.X.Bytes())
 	key := hash.Sum(nil)
+	key = key[:s.securityLevel/8]
+
+	// fmt.Printf("xQ: %x\n", xQ.Bytes())
+	// fmt.Printf("source x: %x\n", source.X.Bytes())
+	// fmt.Printf("yQ: %x\n", yQ.Bytes())
+	// fmt.Printf("dest x: %x\n", dest.X.Bytes())
+	// fmt.Printf("key: %x\n", key)
 
 	// encrypt
 	block, err := s.cipherCreator(key)
@@ -114,14 +118,14 @@ func (s *signcrypter) Signcrypt(source *PrivateKey, dest *PublicKey, plaintext, 
 	ciphertext = append(iv, ciphertext...)
 
 	// create tag
-	hash.Reset()
+	hash = s.hashCreator()
 	hash.Write(additionalData)
 	hash.Write(iv)
 	hash.Write(ciphertext)
 	hash.Write(xR.Bytes())
-	hash.Write(source.ID)
+	hash.Write(source.X.Bytes())
 	hash.Write(yR.Bytes())
-	hash.Write(dest.ID)
+	hash.Write(dest.X.Bytes())
 	t := new(big.Int).SetBytes(hash.Sum(nil))
 
 	// create signature
@@ -142,8 +146,8 @@ func (s *signcrypter) Verify(source, dest *PublicKey, output *SigncryptionOutput
 	xR, yR := elliptic.Unmarshal(s.curve, output.R)
 
 	// extract IV
-	iv := output.Ciphertext[:s.blockSize]
-	ciphertext := output.Ciphertext[s.blockSize:]
+	iv := output.Ciphertext[:aes.BlockSize]
+	ciphertext := output.Ciphertext[aes.BlockSize:]
 
 	// compute tag
 	hash := s.hashCreator()
@@ -151,9 +155,9 @@ func (s *signcrypter) Verify(source, dest *PublicKey, output *SigncryptionOutput
 	hash.Write(iv)
 	hash.Write(ciphertext)
 	hash.Write(xR.Bytes())
-	hash.Write(source.ID)
+	hash.Write(source.X.Bytes())
 	hash.Write(yR.Bytes())
-	hash.Write(dest.ID)
+	hash.Write(dest.X.Bytes())
 	t := hash.Sum(nil)
 
 	// compute verification equation #1
@@ -179,10 +183,6 @@ func (s *signcrypter) Unsigncrypt(source *PublicKey, dest *PrivateKey, output *S
 	// parse r
 	xR, yR := elliptic.Unmarshal(s.curve, output.R)
 
-	// extract IV
-	iv := output.Ciphertext[:s.blockSize]
-	ciphertext := output.Ciphertext[s.blockSize:]
-
 	// compute p & q
 	xP, yP := s.curve.Add(xR, yR, source.X, source.Y)
 	xQ, yQ := s.curve.ScalarMult(xP, yP, dest.V.Bytes())
@@ -190,10 +190,21 @@ func (s *signcrypter) Unsigncrypt(source *PublicKey, dest *PrivateKey, output *S
 	// compute session key
 	hash := s.hashCreator()
 	hash.Write(xQ.Bytes())
-	hash.Write(source.ID)
+	hash.Write(source.X.Bytes())
 	hash.Write(yQ.Bytes())
-	hash.Write(dest.ID)
+	hash.Write(dest.X.Bytes())
 	key := hash.Sum(nil)
+	key = key[:s.securityLevel/8]
+
+	// fmt.Printf("xQ: %x\n", xQ.Bytes())
+	// fmt.Printf("source x: %x\n", source.X.Bytes())
+	// fmt.Printf("yQ: %x\n", yQ.Bytes())
+	// fmt.Printf("dest x: %x\n", dest.X.Bytes())
+	// fmt.Printf("key: %x\n", key)
+
+	// extract IV
+	iv := output.Ciphertext[:aes.BlockSize]
+	ciphertext := output.Ciphertext[aes.BlockSize:]
 
 	// recover plaintext
 	plaintext := make([]byte, len(ciphertext))
@@ -201,37 +212,28 @@ func (s *signcrypter) Unsigncrypt(source *PublicKey, dest *PrivateKey, output *S
 	if err != nil {
 		return nil, false, fmt.Errorf("error creating AES cipher")
 	}
+
 	ctr := cipher.NewCTR(block, iv)
 	ctr.XORKeyStream(plaintext, ciphertext)
 
 	return plaintext, true, nil
 }
 
-// NewCurve25519 returns a Signcrypter based on the elliptic curve
-// Curve25519. The signcrypter also uses AES-CTR-256 for encrypting
-// and SHA-256 for generating keys. This signcryption scheme provides
-// security at the 128-bit level.
-func NewCurve25519() Signcrypter {
-	return &signcrypter{
-		blockSize:     32,
-		curve:         ecCurve25519,
-		hashCreator:   sha256.New,
-		cipherCreator: aes.NewCipher,
-		rand:          rand.Reader,
-	}
-}
-
 // NewP256 returns a Signcrypter based on the elliptic curve P256. The
-// signcrypter also uses AES-CTR-256 for encrypting and SHA-256 for
+// signcrypter also uses AES-CTR-128 for encrypting and SHA-256 for
 // generating keys. This signcryption scheme provides security at the
 // 128-bit level.
 func NewP256() Signcrypter {
+	return newP256(rand.Reader)
+}
+
+func newP256(rand io.Reader) Signcrypter {
 	return &signcrypter{
-		blockSize:     32,
+		securityLevel: 128,
 		curve:         elliptic.P256(),
 		hashCreator:   sha256.New,
 		cipherCreator: aes.NewCipher,
-		rand:          rand.Reader,
+		rand:          rand,
 	}
 }
 
@@ -240,11 +242,15 @@ func NewP256() Signcrypter {
 // generating keys. This signcryption scheme provides security at the
 // 256-bit level.
 func NewP521() Signcrypter {
+	return newP521(rand.Reader)
+}
+
+func newP521(rand io.Reader) Signcrypter {
 	return &signcrypter{
-		blockSize:     64,
+		securityLevel: 256,
 		curve:         elliptic.P521(),
-		hashCreator:   sha512.New,
+		hashCreator:   sha256.New,
 		cipherCreator: aes.NewCipher,
-		rand:          rand.Reader,
+		rand:          rand,
 	}
 }
