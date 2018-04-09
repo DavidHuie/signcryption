@@ -1,7 +1,6 @@
-package aalsigncryption
+package aal
 
 import (
-	"bytes"
 	"crypto/elliptic"
 	"encoding/base64"
 	"io"
@@ -26,18 +25,25 @@ func toBase64(in []byte) string {
 	return base64.StdEncoding.EncodeToString(in)
 }
 
+func genPrivateKey(t testing.TB, rand io.Reader) *PrivateKey {
+	pk, err := GeneratePrivateKey(elliptic.P256(), rand)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	pk.ID = make([]byte, 16)
+	if _, err := io.ReadFull(rand, pk.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	return pk
+}
+
 func TestP256Signcrypt(t *testing.T) {
 	rand := rand.New(rand.NewSource(0))
 
 	sc := newP256(rand)
-	source, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		t.Fatal(err)
-	}
-	dest, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		t.Fatal(err)
-	}
+	source, dest := genPrivateKey(t, rand), genPrivateKey(t, rand)
 
 	output, err := sc.Signcrypt(source, &dest.PublicKey, []byte(plaintext), []byte(additionalData))
 	if err != nil {
@@ -45,31 +51,32 @@ func TestP256Signcrypt(t *testing.T) {
 	}
 
 	t.Run("should encrypt correctly", func(t *testing.T) {
-		if toBase64(output.Ciphertext) != `x156gb/eJ19nz+JCzzzDVGAZWihk5is6HTqW3uIb1u9GcOmjlqjfvcMUOHKQKq0o2bxor9b76645FhGw+oAQJhtLgAfBidqBv8mOcJ61s4+MLcQ77R8AHUMcd7GhNzbQTZM5isNW64jOYLQ/jyjllfCW9sZr/A0PhjXb+ioFhl1/511FofEanfd3l9OMvQZhnkBM8giTWIxBjomsfdD0hLtziWxQ0cC5P8itLj+a3PwzAi0fWNL90ZFYCNwsxxsOAVPKHrK5dtxvgpFl9R5gUutbCTp0hkC9nWlsmwXiYjm7j+O29mI=` {
+		if toBase64(output.Ciphertext) != `i8ue8tSmUxR2jW0pl2HqnrT7JVYlv6YwSz2uNCyPzTL03mm+0bGfDDKXWcJTJ+4bQtn9Q8U1WESUz/OveqovcAkK47i1HbqbuRpnylhiS1pdvhsnXNNGO6arQVor8t9h25oi5h2hy32nJrlxqV7RgY1U85nucWSUs+63QnACWAbP9xQtUZqgiiiQ+mdgByQIX/kjuIRYhGEKLH5qbn8621fyWKSpXz1Z+CF7z0m07x/M3+SDyjxD1P0oCH+Ms6BGLTEGjKQ+tQFcDHZPwBnVLTcB8GOmAw+7mOUUaMiFEGlaB/ZepSk=` {
 			t.Log(toBase64(output.Ciphertext))
 			t.Error("invalid ciphertext")
 		}
-		if toBase64(output.R) != `BBEyUqGsRVbGGsEsakutLpseURAHhUsEr7+SZ0Qm8uXHmoC8juTkNQ3Nx295BYMbo3MAL9EVjySeGdO90ADl3mI=` {
+		if toBase64(output.R) != `BPr/c0wq47ejJVxDhxehPdzq5TCPBGkapZ6lyHa5R8Dj7feDqEul06DjUUvTWx6v0+kXWobf4J4nsWj58vUAdwg=` {
+			t.Log(toBase64(output.R))
 			t.Error("invalid r")
 		}
-		if toBase64(output.Signature) != `VZxdXyHHkxEgAoOXKR7A5UzZx26xN5ibHv1f14DdEoo=` {
+		if toBase64(output.Signature) != `TJ7lbRvsnrksn3STr/2+BOEhS0SCOCLoZnDuJxlQZUE=` {
 			t.Log(toBase64(output.Signature))
 			t.Error("invalid signature")
-		}
-		if bytes.Compare(output.AdditionalData, []byte(additionalData)) != 0 {
-			t.Error("invalid additional data")
 		}
 	})
 
 	t.Run("should verify", func(t *testing.T) {
-		valid := sc.Verify(&source.PublicKey, &dest.PublicKey, output)
+		valid, err := sc.Verify(&source.PublicKey, &dest.PublicKey, []byte(additionalData), output)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if !valid {
 			t.Error("signature should be valid")
 		}
 	})
 
 	t.Run("should unsigncrypt", func(t *testing.T) {
-		plaintextCandidate, valid, err := sc.Unsigncrypt(&source.PublicKey, dest, output)
+		plaintextCandidate, valid, err := sc.Unsigncrypt(&source.PublicKey, dest, []byte(additionalData), output)
 		if err != nil {
 			t.Error("unsigncrypting should not throw error")
 		}
@@ -87,14 +94,7 @@ func BenchmarkSigncrypt256(b *testing.B) {
 	rand := rand.New(rand.NewSource(0))
 
 	sc := newP256(rand)
-	source, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		b.Fatal(err)
-	}
-	dest, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		b.Fatal(err)
-	}
+	source, dest := genPrivateKey(b, rand), genPrivateKey(b, rand)
 
 	var payloads [][]byte
 	for i := 0; i < b.N; i++ {
@@ -116,16 +116,8 @@ func BenchmarkSigncrypt256(b *testing.B) {
 
 func BenchmarkUnsigncrypt256(b *testing.B) {
 	rand := rand.New(rand.NewSource(0))
-
 	sc := newP256(rand)
-	source, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		b.Fatal(err)
-	}
-	dest, err := GeneratePrivateKey(elliptic.P256(), rand)
-	if err != nil {
-		b.Fatal(err)
-	}
+	source, dest := genPrivateKey(b, rand), genPrivateKey(b, rand)
 
 	var ciphertexts []*SigncryptionOutput
 	for i := 0; i < b.N; i++ {
@@ -143,7 +135,7 @@ func BenchmarkUnsigncrypt256(b *testing.B) {
 	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
-		_, ok, err := sc.Unsigncrypt(&source.PublicKey, dest, ciphertexts[i])
+		_, ok, err := sc.Unsigncrypt(&source.PublicKey, dest, []byte(additionalData), ciphertexts[i])
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -152,34 +144,3 @@ func BenchmarkUnsigncrypt256(b *testing.B) {
 		}
 	}
 }
-
-// func BenchmarkSigncrypt512(b *testing.B) {
-// 	rand := rand.New(rand.NewSource(0))
-
-// 	sc := newP521(rand)
-// 	source, err := GeneratePrivateKey(elliptic.P256(), rand)
-// 	if err != nil {
-// 		b.Fatal(err)
-// 	}
-// 	dest, err := GeneratePrivateKey(elliptic.P256(), rand)
-// 	if err != nil {
-// 		b.Fatal(err)
-// 	}
-
-// 	var payloads [][]byte
-// 	for i := 0; i < b.N; i++ {
-// 		buf := make([]byte, payloadSize)
-// 		if _, err := io.ReadFull(rand, buf); err != nil {
-// 			b.Fatal(err)
-// 		}
-// 		payloads = append(payloads, buf)
-// 	}
-
-// 	b.ResetTimer()
-
-// 	for i := 0; i < b.N; i++ {
-// 		if _, err := sc.Signcrypt(source, &dest.PublicKey, []byte(plaintext), []byte(additionalData)); err != nil {
-// 			b.Fatal(err)
-// 		}
-// 	}
-// }
