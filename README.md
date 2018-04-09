@@ -1,5 +1,7 @@
 # signcryption
 
+[![GoDoc](https://godoc.org/github.com/DavidHuie/signcryption?status.svg)](https://godoc.org/github.com/DavidHuie/signcryption)
+
 A collection of signcryption algorithms for Go.
 
 ## Algorithms
