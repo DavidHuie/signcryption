@@ -202,6 +202,11 @@ func (s *signcrypter) Verify(sender, recipient *PublicKey, additionalData []byte
 	return (xEqual == 0) && (yEqual == 0), nil
 }
 
+type vmsg struct {
+	valid bool
+	err   error
+}
+
 func (s *signcrypter) Unsigncrypt(sender *PublicKey, recipient *PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error) {
 	if err := sender.Validate(); err != nil {
 		return nil, false, fmt.Errorf("error invalid public key: %s", err)
@@ -210,14 +215,12 @@ func (s *signcrypter) Unsigncrypt(sender *PublicKey, recipient *PrivateKey, addi
 		return nil, false, fmt.Errorf("error invalid public key: %s", err)
 	}
 
-	// verify the signature first
-	valid, err := s.Verify(sender, &recipient.PublicKey, additionalData, output)
-	if err != nil {
-		return nil, false, fmt.Errorf("error validating signature: %s", err)
-	}
-	if !valid {
-		return nil, false, nil
-	}
+	// verify the signature in parallel
+	vchan := make(chan *vmsg)
+	go func() {
+		valid, verr := s.Verify(sender, &recipient.PublicKey, additionalData, output)
+		vchan <- &vmsg{valid, verr}
+	}()
 
 	// parse r
 	xR, yR := elliptic.Unmarshal(s.curve, output.R)
@@ -248,6 +251,15 @@ func (s *signcrypter) Unsigncrypt(sender *PublicKey, recipient *PrivateKey, addi
 
 	ctr := cipher.NewCTR(block, iv)
 	ctr.XORKeyStream(plaintext, ciphertext)
+
+	// Check the results for the parallel signature verification.
+	msg := <-vchan
+	if msg.err != nil {
+		return nil, false, fmt.Errorf("error validating signature: %s", err)
+	}
+	if !msg.valid {
+		return nil, false, nil
+	}
 
 	return plaintext, true, nil
 }
