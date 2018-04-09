@@ -16,7 +16,7 @@ import (
 )
 
 // PublicKey represents an AAL public key, which is just an elliptic
-// curve point behind the scenes. In order to be useful, the ID fields
+// curve point behind the scenes. In order to be useful, the ID field
 // has to be filled in by an out-of-band process and be unique to each
 // public key.
 type PublicKey struct {
@@ -252,8 +252,8 @@ func (s *signcrypter) Unsigncrypt(sender *PublicKey, recipient *PrivateKey, addi
 	return plaintext, true, nil
 }
 
-// NewP256 returns a AAL based on the elliptic curve P256. The
-// signcrypter also uses AES-CTR-128 for encrypting and SHA-256 for
+// NewP256 returns an AAL instance based on the elliptic curve
+// P256. The instance uses AES-CTR-128 for encrypting and SHA-256 for
 // generating keys. This signcryption scheme provides security at the
 // 128-bit level.
 func NewP256() AAL {
@@ -270,10 +270,10 @@ func newP256(rand io.Reader) AAL {
 	}
 }
 
-// NewP521 returns a AAL based on the elliptic curve P521. The
-// signcrypter also uses AES-CTR-512 for encrypting and SHA-512 for
-// generating keys. This signcryption scheme provides security at the
-// 256-bit level.
+// NewP521 returns an AAL instance based on the elliptic curve
+// P521. The signcrypter uses AES-CTR-512 for encrypting and SHA-512
+// for generating keys. This signcryption scheme provides security at
+// the 256-bit level.
 func NewP521() AAL {
 	return newP521(rand.Reader)
 }
