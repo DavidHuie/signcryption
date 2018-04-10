@@ -3,66 +3,24 @@ package aal
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
 	"math/big"
+
+	"github.com/DavidHuie/signcryption"
 )
-
-// PublicKey represents an AAL public key, which is just an elliptic
-// curve point behind the scenes. In order to be useful, the ID field
-// has to be filled in by an out-of-band process and be unique to each
-// public key.
-type PublicKey struct {
-	Curve elliptic.Curve
-	X, Y  *big.Int
-	ID    []byte
-}
-
-// Validate validates a public key.
-func (p *PublicKey) Validate() error {
-	if len(p.ID) == 0 {
-		return errors.New("error: missing public key ID")
-	}
-	return nil
-}
-
-// PrivateKey represents an AAL public key, which is a PublicKey point
-// and an integer.
-type PrivateKey struct {
-	PublicKey
-	V *big.Int
-}
 
 // AAL represents all of the different functions possible with the AAL
 // signcryption scheme.
 type AAL interface {
-	Signcrypt(sender *PrivateKey, recipient *PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error)
-	Verify(sender, recipient *PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error)
-	Unsigncrypt(sender *PublicKey, recipient *PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error)
-}
-
-// GeneratePrivateKey generates a public key for an elliptic curve.
-func GeneratePrivateKey(c elliptic.Curve, rand io.Reader) (*PrivateKey, error) {
-	ecdsaKey, err := ecdsa.GenerateKey(c, rand)
-	if err != nil {
-		return nil, fmt.Errorf("error generating ECDSA key: %s", err)
-	}
-
-	return &PrivateKey{
-		PublicKey: PublicKey{
-			Curve: c,
-			X:     ecdsaKey.X,
-			Y:     ecdsaKey.Y,
-		},
-		V: ecdsaKey.D,
-	}, nil
+	Signcrypt(sender *signcryption.PrivateKey, recipient *signcryption.PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error)
+	Verify(sender, recipient *signcryption.PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error)
+	Unsigncrypt(sender *signcryption.PublicKey, recipient *signcryption.PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error)
 }
 
 type cipherCreator func([]byte) (cipher.Block, error)
@@ -86,7 +44,7 @@ type SigncryptionOutput struct {
 	Signature  []byte
 }
 
-func (s *signcrypter) Signcrypt(sender *PrivateKey, recipient *PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error) {
+func (s *signcrypter) Signcrypt(sender *signcryption.PrivateKey, recipient *signcryption.PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error) {
 	if err := sender.PublicKey.Validate(); err != nil {
 		return nil, fmt.Errorf("error invalid public key: %s", err)
 	}
@@ -163,7 +121,7 @@ func (s *signcrypter) Signcrypt(sender *PrivateKey, recipient *PublicKey, plaint
 	}, nil
 }
 
-func (s *signcrypter) Verify(sender, recipient *PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error) {
+func (s *signcrypter) Verify(sender, recipient *signcryption.PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error) {
 	if err := sender.Validate(); err != nil {
 		return false, fmt.Errorf("error invalid public key: %s", err)
 	}
@@ -207,7 +165,7 @@ type vmsg struct {
 	err   error
 }
 
-func (s *signcrypter) Unsigncrypt(sender *PublicKey, recipient *PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error) {
+func (s *signcrypter) Unsigncrypt(sender *signcryption.PublicKey, recipient *signcryption.PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error) {
 	if err := sender.Validate(); err != nil {
 		return nil, false, fmt.Errorf("error invalid public key: %s", err)
 	}

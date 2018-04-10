@@ -27,3 +27,9 @@ AAL signcryption provides the following features:
 
 This version of AAL is implemented with the elliptic curves P256 &
 P521, AES counter mode encryption, and SHA-256 for generating keys.
+
+## Protocols
+
+### Signcrypted Transport Layer (STL)
+
+A publically verifiable signcrypted transport layer.

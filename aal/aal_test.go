@@ -6,6 +6,8 @@ import (
 	"io"
 	"math/rand"
 	"testing"
+
+	"github.com/DavidHuie/signcryption"
 )
 
 const (
@@ -25,8 +27,8 @@ func toBase64(in []byte) string {
 	return base64.StdEncoding.EncodeToString(in)
 }
 
-func genPrivateKey(t testing.TB, rand io.Reader) *PrivateKey {
-	pk, err := GeneratePrivateKey(elliptic.P256(), rand)
+func genPrivateKey(t testing.TB, rand io.Reader) *signcryption.PrivateKey {
+	pk, err := signcryption.GeneratePrivateKey(elliptic.P256(), rand)
 	if err != nil {
 		t.Fatal(err)
 	}
