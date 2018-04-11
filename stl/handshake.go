@@ -1,17 +1,25 @@
 package stl
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/sha256"
 	"io"
 	"math/big"
 
-	"crypto/ecdsa"
-	"crypto/sha256"
-
-	"crypto/elliptic"
+	"bytes"
 
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/pkg/errors"
 )
+
+// This file implements the AKE1(1) session key protocol to generate a
+// shared session key between a client and a server. In this case,
+// however, the session key is used as a public channel binding. The
+// implementation uses ECIES for public key encryption and ECDSA for
+// signatures.
+//
+// (1) A Graduate Course in Applied Cryptography by Boneh & Shoup
 
 const (
 	handshakeChallengeSize = 32
@@ -23,6 +31,7 @@ type clientHandshaker struct {
 	id         []byte
 	priv       *ecies.PrivateKey
 	dest       *ecdsa.PublicKey
+	destID     []byte
 	challenge  []byte
 	sessionKey []byte
 }
@@ -55,7 +64,8 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 	// Validate certificate
 	if pub.X.Cmp(c.dest.X) != 0 ||
 		pub.Y.Cmp(c.dest.Y) != 0 ||
-		c.priv.Curve.Params().Name != pub.Curve.Params().Name {
+		c.priv.Curve.Params().Name != pub.Curve.Params().Name ||
+		bytes.Compare(resp.ID, c.destID) != 0 {
 		return false, nil
 	}
 
@@ -79,16 +89,21 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 	}
 
 	// Decrypt session key
-	sessionKey, err := c.priv.Decrypt(resp.EncryptedSessionKey, nil, nil)
+	sessionKeyAndID, err := c.priv.Decrypt(resp.EncryptedSessionKey, nil, nil)
 	if err == ecies.ErrInvalidMessage {
 		return false, nil
 	}
-	c.sessionKey = sessionKey
+	encryptedID := sessionKeyAndID[sessionKeySize:]
+	if !bytes.Equal(encryptedID, c.destID) {
+		return false, nil
+	}
+
+	c.sessionKey = sessionKeyAndID[:sessionKeySize]
 
 	return true, nil
 }
 
-type idVerifier interface {
+type IDVerifier interface {
 	VerifyID([]byte, *ecies.PublicKey) (bool, error)
 }
 
@@ -96,7 +111,7 @@ type serverHandshaker struct {
 	rand       io.Reader
 	id         []byte
 	priv       *ecdsa.PrivateKey
-	idVerifier idVerifier
+	idVerifier IDVerifier
 	sessionKey []byte
 }
 
