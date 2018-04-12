@@ -56,3 +56,12 @@ func PrivateKeyFromECDSA(k *ecdsa.PrivateKey) *PrivateKey {
 		V: k.D,
 	}
 }
+
+// PublicKeyFromECDSA generates a PublicKey from an ECDSA public key.
+func PublicKeyFromECDSA(k *ecdsa.PublicKey) *PublicKey {
+	return &PublicKey{
+		Curve: k.Curve,
+		X:     k.X,
+		Y:     k.Y,
+	}
+}

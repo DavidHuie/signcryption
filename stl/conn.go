@@ -37,9 +37,10 @@ type ClientConfig struct {
 }
 
 type ServerConfig struct {
-	ServerID         []byte
-	ServerPrivateKey *ecdsa.PrivateKey
-	SessionVerifier  SessionVerifier
+	ServerID                   []byte
+	ServerSignaturePrivateKey  *ecdsa.PrivateKey
+	ServerEncryptionPrivateKey *signcryption.PrivateKey
+	SessionVerifier            SessionVerifier
 }
 
 type Conn struct {
@@ -53,6 +54,27 @@ type Conn struct {
 	readBuf         *bytes.Buffer
 	writtenSegments uint64
 	readSegments    uint64
+}
+
+func NewConn(c net.Conn, config *ClientConfig) *Conn {
+	return &Conn{
+		conn:         c,
+		clientConfig: config,
+		publicKey:    signcryption.PublicKeyFromECDSA(&config.PrivateKey.ExportECDSA().PublicKey),
+		privateKey:   signcryption.PrivateKeyFromECDSA(config.PrivateKey.ExportECDSA()),
+		aal:          aal.NewP256(),
+		readBuf:      &bytes.Buffer{},
+	}
+}
+
+func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
+	return &Conn{
+		conn:         c,
+		serverConfig: config,
+		readBuf:      &bytes.Buffer{},
+		privateKey:   config.ServerEncryptionPrivateKey,
+		aal:          aal.NewP256(),
+	}
 }
 
 func (c *Conn) handshakeAsServer() error {
@@ -75,7 +97,7 @@ func (c *Conn) handshakeAsServer() error {
 	handshaker := &serverHandshaker{
 		rand:            rand.Reader,
 		id:              c.serverConfig.ServerID,
-		priv:            c.serverConfig.ServerPrivateKey,
+		priv:            c.serverConfig.ServerSignaturePrivateKey,
 		sessionVerifier: c.serverConfig.SessionVerifier,
 	}
 	response, valid, err := handshaker.processRequest(request)
@@ -95,9 +117,11 @@ func (c *Conn) handshakeAsServer() error {
 	responseBuf := make([]byte, 8+numResponseBytes)
 	binary.LittleEndian.PutUint64(responseBuf, uint64(numResponseBytes))
 	copy(responseBuf[8:], responseBytes)
-	if _, err := io.Copy(c.conn, bytes.NewBuffer(responseBytes)); err != nil {
+	if _, err := io.Copy(c.conn, bytes.NewBuffer(responseBuf)); err != nil {
 		return errors.Wrapf(err, "error writing handshake response")
 	}
+
+	c.sessionKey = handshaker.sessionKey
 
 	return nil
 }
