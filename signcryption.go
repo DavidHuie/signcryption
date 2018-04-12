@@ -41,12 +41,18 @@ func GeneratePrivateKey(c elliptic.Curve, rand io.Reader) (*PrivateKey, error) {
 		return nil, fmt.Errorf("error generating ECDSA key: %s", err)
 	}
 
+	return PrivateKeyFromECDSA(ecdsaKey), nil
+}
+
+// PrivateKeyFromECDSA generates a PrivateKey from an ECDSA private
+// key.
+func PrivateKeyFromECDSA(k *ecdsa.PrivateKey) *PrivateKey {
 	return &PrivateKey{
 		PublicKey: PublicKey{
-			Curve: c,
-			X:     ecdsaKey.X,
-			Y:     ecdsaKey.Y,
+			Curve: k.Curve,
+			X:     k.X,
+			Y:     k.Y,
 		},
-		V: ecdsaKey.D,
-	}, nil
+		V: k.D,
+	}
 }

@@ -110,15 +110,11 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 	return true, nil
 }
 
-type sessionVerifier interface {
-	VerifySession([]byte, *ecies.PublicKey, []byte, *ecies.PublicKey) (bool, error)
-}
-
 type serverHandshaker struct {
 	rand            io.Reader
 	id              []byte
 	priv            *ecdsa.PrivateKey
-	sessionVerifier sessionVerifier
+	sessionVerifier SessionVerifier
 	sessionKey      []byte
 }
 
