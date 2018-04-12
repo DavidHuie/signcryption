@@ -89,7 +89,14 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal("response not processed correctly")
 	}
 
-	if !bytes.Equal(clientHandshaker.sessionKey, serverHandshaker.sessionKey) {
+	tunnelSessionKey, err := ecies.ImportECDSA(tunnelPriv).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
+	if err != nil {
+		t.Fatalf("tunnel session key not decrypted correctly: %s", err)
+	}
+	tunnelSessionKey = tunnelSessionKey[:sessionKeySize]
+
+	if !bytes.Equal(clientHandshaker.sessionKey, serverHandshaker.sessionKey) ||
+		!bytes.Equal(clientHandshaker.sessionKey, tunnelSessionKey) {
 		t.Fatal("session keys must match")
 	}
 }

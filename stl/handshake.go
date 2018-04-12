@@ -176,9 +176,11 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error encrypting handshake session key for server")
 	}
-	response.EncryptedSessionKeyForTunnel, err = ecies.Encrypt(s.rand, tunnelPub, plaintext, nil, nil)
-	if err != nil {
-		return nil, false, errors.Wrapf(err, "error encrypting handshake session key for tunnel")
+	if tunnelPub != nil {
+		response.EncryptedSessionKeyForTunnel, err = ecies.Encrypt(s.rand, tunnelPub, plaintext, nil, nil)
+		if err != nil {
+			return nil, false, errors.Wrapf(err, "error encrypting handshake session key for tunnel")
+		}
 	}
 
 	// create signature
