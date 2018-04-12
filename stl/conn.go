@@ -24,7 +24,7 @@ const (
 )
 
 type SessionVerifier interface {
-	VerifySession([]byte, *ecies.PublicKey, []byte, *ecies.PublicKey) (bool, error)
+	VerifySession([]byte, *ecies.PublicKey, *ecdsa.PublicKey, []byte, *ecies.PublicKey) (bool, error)
 }
 
 type ClientConfig struct {
@@ -79,6 +79,16 @@ func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
 	}
 }
 
+func (c *Conn) Handshake() error {
+	if len(c.sessionKey) != 0 {
+		return nil
+	}
+	if c.clientConfig != nil {
+		return c.handshakeAsClient()
+	}
+	return c.handshakeAsServer()
+}
+
 func (c *Conn) handshakeAsServer() error {
 	// Read in request
 	requestSizeBytes := make([]byte, 8)
@@ -123,6 +133,8 @@ func (c *Conn) handshakeAsServer() error {
 		return errors.Wrapf(err, "error writing handshake response")
 	}
 
+	c.publicKey = signcryption.PublicKeyFromECDSA(response.encryptionPublicKey,
+		request.ID)
 	c.sessionKey = handshaker.sessionKey
 
 	return nil
@@ -130,13 +142,14 @@ func (c *Conn) handshakeAsServer() error {
 
 func (c *Conn) handshakeAsClient() error {
 	handshaker := &clientHandshaker{
-		rand:      rand.Reader,
-		id:        c.clientConfig.ClientID,
-		priv:      c.clientConfig.HandshakePrivateKey,
-		serverPub: c.clientConfig.ServerHandshakePublicKey,
-		serverID:  c.clientConfig.ServerID,
-		tunnelPub: c.clientConfig.TunnelEncryptionPublicKey,
-		tunnelID:  c.clientConfig.TunnelID,
+		rand:           rand.Reader,
+		id:             c.clientConfig.ClientID,
+		priv:           c.clientConfig.HandshakePrivateKey,
+		encryptionPriv: c.clientConfig.EncryptionPrivateKey.ToECDSA(),
+		serverPub:      c.clientConfig.ServerHandshakePublicKey,
+		serverID:       c.clientConfig.ServerID,
+		tunnelPub:      c.clientConfig.TunnelEncryptionPublicKey,
+		tunnelID:       c.clientConfig.TunnelID,
 	}
 	request := handshaker.generateRequest()
 	requestBytes, err := msgpack.Marshal(request)

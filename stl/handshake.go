@@ -26,24 +26,26 @@ const (
 )
 
 type clientHandshaker struct {
-	rand       io.Reader
-	id         []byte
-	priv       *ecies.PrivateKey
-	serverPub  *ecdsa.PublicKey
-	serverID   []byte
-	tunnelPub  *ecdsa.PublicKey
-	tunnelID   []byte
-	challenge  []byte
-	sessionKey []byte
+	rand           io.Reader
+	id             []byte
+	priv           *ecies.PrivateKey
+	encryptionPriv *ecdsa.PrivateKey
+	serverPub      *ecdsa.PublicKey
+	serverID       []byte
+	tunnelPub      *ecdsa.PublicKey
+	tunnelID       []byte
+	challenge      []byte
+	sessionKey     []byte
 }
 
 type handshakeRequest struct {
-	Challenge []byte
-	ID        []byte
-	Pub       []byte
-	ServerPub []byte
-	TunnelID  []byte
-	TunnelPub []byte
+	Challenge     []byte
+	ID            []byte
+	Pub           []byte
+	EncryptionPub []byte
+	ServerPub     []byte
+	TunnelID      []byte
+	TunnelPub     []byte
 }
 
 func (c *clientHandshaker) generateRequest() *handshakeRequest {
@@ -51,12 +53,13 @@ func (c *clientHandshaker) generateRequest() *handshakeRequest {
 	edsaPub := c.priv.PublicKey.ExportECDSA()
 
 	return &handshakeRequest{
-		Challenge: c.challenge,
-		ID:        c.id,
-		Pub:       elliptic.Marshal(edsaPub.Curve, edsaPub.X, edsaPub.Y),
-		ServerPub: elliptic.Marshal(c.serverPub.Curve, c.serverPub.X, c.serverPub.Y),
-		TunnelID:  c.tunnelID,
-		TunnelPub: elliptic.Marshal(c.tunnelPub.Curve, c.tunnelPub.X, c.tunnelPub.Y),
+		Challenge:     c.challenge,
+		ID:            c.id,
+		Pub:           elliptic.Marshal(edsaPub.Curve, edsaPub.X, edsaPub.Y),
+		EncryptionPub: elliptic.Marshal(c.encryptionPriv.Curve, c.encryptionPriv.X, c.encryptionPriv.Y),
+		ServerPub:     elliptic.Marshal(c.serverPub.Curve, c.serverPub.X, c.serverPub.Y),
+		TunnelID:      c.tunnelID,
+		TunnelPub:     elliptic.Marshal(c.tunnelPub.Curve, c.tunnelPub.X, c.tunnelPub.Y),
 	}
 }
 
@@ -125,6 +128,8 @@ type handshakeResponse struct {
 	SigS                         []byte
 	Pub                          []byte
 	ID                           []byte
+
+	encryptionPublicKey *ecdsa.PublicKey
 }
 
 func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResponse, bool, error) {
@@ -141,6 +146,13 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 		Y:     y,
 	})
 
+	encX, encY := elliptic.Unmarshal(s.priv.Curve, req.EncryptionPub)
+	encPub := &ecdsa.PublicKey{
+		Curve: s.priv.Curve,
+		X:     encX,
+		Y:     encY,
+	}
+
 	var tunnelPub *ecies.PublicKey
 	if len(req.TunnelPub) != 0 {
 		x, y := elliptic.Unmarshal(s.priv.Curve, req.TunnelPub)
@@ -152,7 +164,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	}
 
 	// verify the ID of the client
-	valid, err := s.sessionVerifier.VerifySession(req.ID, pub, req.TunnelID, tunnelPub)
+	valid, err := s.sessionVerifier.VerifySession(req.ID, pub, encPub, req.TunnelID, tunnelPub)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error validating client ID")
 	}
@@ -197,6 +209,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	response.SigS = sigS.Bytes()
 	response.ID = s.id
 	response.Pub = elliptic.Marshal(s.priv.Curve, s.priv.PublicKey.X, s.priv.PublicKey.Y)
+	response.encryptionPublicKey = encPub
 
 	s.sessionKey = sessionKey
 

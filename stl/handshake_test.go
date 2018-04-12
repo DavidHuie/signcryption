@@ -11,17 +11,20 @@ import (
 )
 
 type sessionVerifierImpl struct {
-	clientID  []byte
-	clientPub *ecies.PublicKey
-	tunnelID  []byte
-	tunnelPub *ecies.PublicKey
+	clientID     []byte
+	clientPub    *ecies.PublicKey
+	clientEncPub *ecdsa.PublicKey
+	tunnelID     []byte
+	tunnelPub    *ecies.PublicKey
 }
 
 func (s *sessionVerifierImpl) VerifySession(clientID []byte, clientPub *ecies.PublicKey,
-	tunnelID []byte, tunnelPub *ecies.PublicKey) (bool, error) {
+	clientEncPub *ecdsa.PublicKey, tunnelID []byte, tunnelPub *ecies.PublicKey) (bool, error) {
 	clientEqual := bytes.Compare(clientID, s.clientID) == 0 &&
 		s.clientPub.X.Cmp(clientPub.X) == 0 &&
-		s.clientPub.Y.Cmp(clientPub.Y) == 0
+		s.clientPub.Y.Cmp(clientPub.Y) == 0 &&
+		s.clientEncPub.X.Cmp(clientEncPub.X) == 0 &&
+		s.clientEncPub.Y.Cmp(clientEncPub.Y) == 0
 
 	tunnelEqual := bytes.Compare(tunnelID, s.tunnelID) == 0 &&
 		s.tunnelPub.X.Cmp(tunnelPub.X) == 0 &&
@@ -48,20 +51,22 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessionVerifier := &sessionVerifierImpl{
-		clientID:  clientID,
-		clientPub: ecies.ImportECDSAPublic(&clientPriv.PublicKey),
-		tunnelID:  tunnelID,
-		tunnelPub: ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
+		clientID:     clientID,
+		clientPub:    ecies.ImportECDSAPublic(&clientPriv.PublicKey),
+		clientEncPub: &clientPriv.PublicKey,
+		tunnelID:     tunnelID,
+		tunnelPub:    ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
 	}
 
 	clientHandshaker := &clientHandshaker{
-		rand:      r,
-		id:        clientID,
-		priv:      ecies.ImportECDSA(clientPriv),
-		serverPub: &serverPriv.PublicKey,
-		serverID:  serverID,
-		tunnelPub: &tunnelPriv.PublicKey,
-		tunnelID:  tunnelID,
+		rand:           r,
+		id:             clientID,
+		priv:           ecies.ImportECDSA(clientPriv),
+		encryptionPriv: clientPriv,
+		serverPub:      &serverPriv.PublicKey,
+		serverID:       serverID,
+		tunnelPub:      &tunnelPriv.PublicKey,
+		tunnelID:       tunnelID,
 	}
 
 	serverHandshaker := &serverHandshaker{

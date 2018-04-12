@@ -4,17 +4,18 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
+	"io"
 	"math/rand"
 	"net"
-	"sync"
 	"testing"
+
+	cryptorand "crypto/rand"
 
 	"github.com/DavidHuie/signcryption"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 )
 
-func TestConnIntegration(t *testing.T) {
-	r := rand.New(rand.NewSource(0))
+func getClientServer(t *testing.T, r io.Reader) (*Conn, *Conn, func()) {
 	clientID := getRandBytes(r, 16)
 	clientPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
 	if err != nil {
@@ -32,10 +33,11 @@ func TestConnIntegration(t *testing.T) {
 	}
 
 	verifier := &sessionVerifierImpl{
-		clientID:  clientID,
-		clientPub: ecies.ImportECDSAPublic(&clientPriv.PublicKey),
-		tunnelID:  tunnelID,
-		tunnelPub: ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
+		clientID:     clientID,
+		clientPub:    ecies.ImportECDSAPublic(&clientPriv.PublicKey),
+		clientEncPub: &clientPriv.PublicKey,
+		tunnelID:     tunnelID,
+		tunnelPub:    ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
 	}
 
 	listener, err := net.Listen("tcp", ":")
@@ -43,54 +45,104 @@ func TestConnIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var serverSessionKey []byte
+	var serverConn Conn
 
-	wg := &sync.WaitGroup{}
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
-
-		serverConn, err := listener.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
-			t.Fatal(err)
+			t.Logf("error accepting conn: %s", err)
 		}
 
-		conn := NewServerConn(serverConn, &ServerConfig{
+		serverConn = *NewServerConn(conn, &ServerConfig{
 			ID:                   serverID,
 			SignaturePrivateKey:  serverPriv,
-			EncryptionPrivateKey: signcryption.PrivateKeyFromECDSA(serverPriv),
+			EncryptionPrivateKey: signcryption.PrivateKeyFromECDSA(serverPriv, serverID),
 			SessionVerifier:      verifier,
 		})
-		if err := conn.handshakeAsServer(); err != nil {
+		if err := serverConn.Handshake(); err != nil {
 			t.Error(err)
 		}
-
-		serverSessionKey = conn.sessionKey
 	}()
 
-	clientConn, err := net.Dial("tcp", listener.Addr().String())
+	conn, err := net.Dial("tcp", listener.Addr().String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn := NewConn(clientConn, &ClientConfig{
+	clientConn := NewConn(conn, &ClientConfig{
 		ClientID:                  clientID,
 		HandshakePrivateKey:       ecies.ImportECDSA(clientPriv),
 		ServerHandshakePublicKey:  &serverPriv.PublicKey,
 		ServerID:                  serverID,
-		ServerEncryptionPublicKey: signcryption.PublicKeyFromECDSA(&serverPriv.PublicKey),
+		ServerEncryptionPublicKey: signcryption.PublicKeyFromECDSA(&serverPriv.PublicKey, serverID),
 		TunnelEncryptionPublicKey: &tunnelPriv.PublicKey,
 		TunnelID:                  tunnelID,
-		EncryptionPrivateKey:      signcryption.PrivateKeyFromECDSA(clientPriv),
+		EncryptionPrivateKey:      signcryption.PrivateKeyFromECDSA(clientPriv, clientID),
 	})
 
-	if err := conn.handshakeAsClient(); err != nil {
+	return clientConn, &serverConn, func() {
+		conn.Close()
+		listener.Close()
+	}
+}
+
+func TestConnIntegration(t *testing.T) {
+	clientConn, serverConn, cleanup := getClientServer(t, rand.New(rand.NewSource(0)))
+	defer cleanup()
+
+	if err := clientConn.Handshake(); err != nil {
 		t.Fatal(err)
 	}
 
-	listener.Close()
-	wg.Wait()
-
-	if bytes.Compare(conn.sessionKey, serverSessionKey) != 0 {
+	if bytes.Compare(clientConn.sessionKey, serverConn.sessionKey) != 0 {
 		t.Fatal("session keys must match")
+	}
+}
+
+func TestBidirectionalReadWrite(t *testing.T) {
+	r := cryptorand.Reader
+
+	clientConn, serverConn, cleanup := getClientServer(t, r)
+	defer cleanup()
+
+	if err := clientConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+
+	clientBuf := &bytes.Buffer{}
+	serverBuf := &bytes.Buffer{}
+
+	numBytes := int64(10 * 1024 * 1024)
+
+	go func() {
+		n, err := io.CopyN(io.MultiWriter(clientConn, clientBuf), r, numBytes)
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	go func() {
+		n, err := io.CopyN(io.MultiWriter(serverConn, serverBuf), r, numBytes)
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	clientReadBuf := make([]byte, numBytes)
+	if _, err := io.ReadFull(serverConn, clientReadBuf); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(clientReadBuf, clientBuf.Bytes()) != 0 {
+		t.Fatal("client buffers not equal")
+	}
+
+	serverReadBuf := make([]byte, numBytes)
+	if _, err := io.ReadFull(clientConn, serverReadBuf); err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Compare(serverReadBuf, serverBuf.Bytes()) != 0 {
+		t.Fatal("server buffers not equal")
 	}
 }

@@ -34,6 +34,18 @@ type PrivateKey struct {
 	V *big.Int
 }
 
+// ToECDSA converts a key to ECDSA format.
+func (p *PrivateKey) ToECDSA() *ecdsa.PrivateKey {
+	return &ecdsa.PrivateKey{
+		PublicKey: ecdsa.PublicKey{
+			Curve: p.Curve,
+			X:     p.X,
+			Y:     p.Y,
+		},
+		D: p.V,
+	}
+}
+
 // GeneratePrivateKey generates a public key for an elliptic curve.
 func GeneratePrivateKey(c elliptic.Curve, rand io.Reader) (*PrivateKey, error) {
 	ecdsaKey, err := ecdsa.GenerateKey(c, rand)
@@ -41,27 +53,29 @@ func GeneratePrivateKey(c elliptic.Curve, rand io.Reader) (*PrivateKey, error) {
 		return nil, fmt.Errorf("error generating ECDSA key: %s", err)
 	}
 
-	return PrivateKeyFromECDSA(ecdsaKey), nil
+	return PrivateKeyFromECDSA(ecdsaKey, nil), nil
 }
 
 // PrivateKeyFromECDSA generates a PrivateKey from an ECDSA private
 // key.
-func PrivateKeyFromECDSA(k *ecdsa.PrivateKey) *PrivateKey {
+func PrivateKeyFromECDSA(k *ecdsa.PrivateKey, id []byte) *PrivateKey {
 	return &PrivateKey{
 		PublicKey: PublicKey{
 			Curve: k.Curve,
 			X:     k.X,
 			Y:     k.Y,
+			ID:    id,
 		},
 		V: k.D,
 	}
 }
 
 // PublicKeyFromECDSA generates a PublicKey from an ECDSA public key.
-func PublicKeyFromECDSA(k *ecdsa.PublicKey) *PublicKey {
+func PublicKeyFromECDSA(k *ecdsa.PublicKey, id []byte) *PublicKey {
 	return &PublicKey{
 		Curve: k.Curve,
 		X:     k.X,
 		Y:     k.Y,
+		ID:    id,
 	}
 }
