@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"time"
 
 	"github.com/DavidHuie/signcryption"
 	"github.com/DavidHuie/signcryption/aal"
@@ -21,6 +22,10 @@ const (
 	// tuning.
 	// TODO: tune
 	maxPlaintext = 16384
+)
+
+var (
+	_ net.Conn = &Conn{}
 )
 
 type SessionVerifier interface {
@@ -87,6 +92,30 @@ func (c *Conn) Handshake() error {
 		return c.handshakeAsClient()
 	}
 	return c.handshakeAsServer()
+}
+
+func (c *Conn) Close() error {
+	return c.conn.Close()
+}
+
+func (c *Conn) LocalAddr() net.Addr {
+	return c.conn.LocalAddr()
+}
+
+func (c *Conn) RemoteAddr() net.Addr {
+	return c.conn.RemoteAddr()
+}
+
+func (c *Conn) SetDeadline(t time.Time) error {
+	return c.conn.SetDeadline(t)
+}
+
+func (c *Conn) SetReadDeadline(t time.Time) error {
+	return c.conn.SetReadDeadline(t)
+}
+
+func (c *Conn) SetWriteDeadline(t time.Time) error {
+	return c.conn.SetWriteDeadline(t)
 }
 
 func (c *Conn) handshakeAsServer() error {
