@@ -50,24 +50,22 @@ func TestConnIntegration(t *testing.T) {
 	go func() {
 		defer wg.Done()
 
-		for {
-			serverConn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-
-			conn := NewServerConn(serverConn, &ServerConfig{
-				ServerID:                   serverID,
-				ServerSignaturePrivateKey:  serverPriv,
-				ServerEncryptionPrivateKey: signcryption.PrivateKeyFromECDSA(serverPriv),
-				SessionVerifier:            verifier,
-			})
-			if err := conn.handshakeAsServer(); err != nil {
-				t.Error(err)
-			}
-
-			serverSessionKey = conn.sessionKey
+		serverConn, err := listener.Accept()
+		if err != nil {
+			t.Fatal(err)
 		}
+
+		conn := NewServerConn(serverConn, &ServerConfig{
+			ID:                   serverID,
+			SignaturePrivateKey:  serverPriv,
+			EncryptionPrivateKey: signcryption.PrivateKeyFromECDSA(serverPriv),
+			SessionVerifier:      verifier,
+		})
+		if err := conn.handshakeAsServer(); err != nil {
+			t.Error(err)
+		}
+
+		serverSessionKey = conn.sessionKey
 	}()
 
 	clientConn, err := net.Dial("tcp", listener.Addr().String())
@@ -75,12 +73,14 @@ func TestConnIntegration(t *testing.T) {
 		t.Fatal(err)
 	}
 	conn := NewConn(clientConn, &ClientConfig{
-		ClientID:        clientID,
-		PrivateKey:      ecies.ImportECDSA(clientPriv),
-		ServerPublicKey: &serverPriv.PublicKey,
-		ServerID:        serverID,
-		TunnelPublicKey: &tunnelPriv.PublicKey,
-		TunnelID:        tunnelID,
+		ClientID:                  clientID,
+		HandshakePrivateKey:       ecies.ImportECDSA(clientPriv),
+		ServerHandshakePublicKey:  &serverPriv.PublicKey,
+		ServerID:                  serverID,
+		ServerEncryptionPublicKey: signcryption.PublicKeyFromECDSA(&serverPriv.PublicKey),
+		TunnelEncryptionPublicKey: &tunnelPriv.PublicKey,
+		TunnelID:                  tunnelID,
+		EncryptionPrivateKey:      signcryption.PrivateKeyFromECDSA(clientPriv),
 	})
 
 	if err := conn.handshakeAsClient(); err != nil {

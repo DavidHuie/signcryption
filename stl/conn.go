@@ -28,19 +28,21 @@ type SessionVerifier interface {
 }
 
 type ClientConfig struct {
-	ClientID        []byte
-	PrivateKey      *ecies.PrivateKey
-	ServerPublicKey *ecdsa.PublicKey
-	ServerID        []byte
-	TunnelPublicKey *ecdsa.PublicKey
-	TunnelID        []byte
+	ClientID                  []byte
+	HandshakePrivateKey       *ecies.PrivateKey
+	EncryptionPrivateKey      *signcryption.PrivateKey
+	ServerEncryptionPublicKey *signcryption.PublicKey
+	ServerHandshakePublicKey  *ecdsa.PublicKey
+	ServerID                  []byte
+	TunnelEncryptionPublicKey *ecdsa.PublicKey
+	TunnelID                  []byte
 }
 
 type ServerConfig struct {
-	ServerID                   []byte
-	ServerSignaturePrivateKey  *ecdsa.PrivateKey
-	ServerEncryptionPrivateKey *signcryption.PrivateKey
-	SessionVerifier            SessionVerifier
+	ID                   []byte
+	SignaturePrivateKey  *ecdsa.PrivateKey
+	EncryptionPrivateKey *signcryption.PrivateKey
+	SessionVerifier      SessionVerifier
 }
 
 type Conn struct {
@@ -60,8 +62,8 @@ func NewConn(c net.Conn, config *ClientConfig) *Conn {
 	return &Conn{
 		conn:         c,
 		clientConfig: config,
-		publicKey:    signcryption.PublicKeyFromECDSA(&config.PrivateKey.ExportECDSA().PublicKey),
-		privateKey:   signcryption.PrivateKeyFromECDSA(config.PrivateKey.ExportECDSA()),
+		publicKey:    config.ServerEncryptionPublicKey,
+		privateKey:   config.EncryptionPrivateKey,
 		aal:          aal.NewP256(),
 		readBuf:      &bytes.Buffer{},
 	}
@@ -72,7 +74,7 @@ func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
 		conn:         c,
 		serverConfig: config,
 		readBuf:      &bytes.Buffer{},
-		privateKey:   config.ServerEncryptionPrivateKey,
+		privateKey:   config.EncryptionPrivateKey,
 		aal:          aal.NewP256(),
 	}
 }
@@ -96,8 +98,8 @@ func (c *Conn) handshakeAsServer() error {
 	// Process request
 	handshaker := &serverHandshaker{
 		rand:            rand.Reader,
-		id:              c.serverConfig.ServerID,
-		priv:            c.serverConfig.ServerSignaturePrivateKey,
+		id:              c.serverConfig.ID,
+		priv:            c.serverConfig.SignaturePrivateKey,
 		sessionVerifier: c.serverConfig.SessionVerifier,
 	}
 	response, valid, err := handshaker.processRequest(request)
@@ -130,10 +132,10 @@ func (c *Conn) handshakeAsClient() error {
 	handshaker := &clientHandshaker{
 		rand:      rand.Reader,
 		id:        c.clientConfig.ClientID,
-		priv:      c.clientConfig.PrivateKey,
-		serverPub: c.clientConfig.ServerPublicKey,
+		priv:      c.clientConfig.HandshakePrivateKey,
+		serverPub: c.clientConfig.ServerHandshakePublicKey,
 		serverID:  c.clientConfig.ServerID,
-		tunnelPub: c.clientConfig.TunnelPublicKey,
+		tunnelPub: c.clientConfig.TunnelEncryptionPublicKey,
 		tunnelID:  c.clientConfig.TunnelID,
 	}
 	request := handshaker.generateRequest()
