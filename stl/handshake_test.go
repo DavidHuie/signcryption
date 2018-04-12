@@ -10,16 +10,24 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 )
 
-type idVerifier struct {
-	id  []byte
-	pub *ecies.PublicKey
+type sessionVerifierImpl struct {
+	clientID  []byte
+	clientPub *ecies.PublicKey
+	tunnelID  []byte
+	tunnelPub *ecies.PublicKey
 }
 
-func (i *idVerifier) VerifyID(id []byte, pub *ecies.PublicKey) (bool, error) {
-	cpub := pub.ExportECDSA()
-	return bytes.Compare(id, i.id) == 0 &&
-		cpub.X.Cmp(pub.X) == 0 &&
-		cpub.Y.Cmp(pub.Y) == 0, nil
+func (s *sessionVerifierImpl) VerifySession(clientID []byte, clientPub *ecies.PublicKey,
+	tunnelID []byte, tunnelPub *ecies.PublicKey) (bool, error) {
+	clientEqual := bytes.Compare(clientID, s.clientID) == 0 &&
+		s.clientPub.X.Cmp(clientPub.X) == 0 &&
+		s.clientPub.Y.Cmp(clientPub.Y) == 0
+
+	tunnelEqual := bytes.Compare(tunnelID, s.tunnelID) == 0 &&
+		s.tunnelPub.X.Cmp(tunnelPub.X) == 0 &&
+		s.tunnelPub.Y.Cmp(tunnelPub.Y) == 0
+
+	return clientEqual && tunnelEqual, nil
 }
 
 func TestEntireHandshake(t *testing.T) {
@@ -34,24 +42,33 @@ func TestEntireHandshake(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	idVerifier := &idVerifier{
-		id:  clientID,
-		pub: ecies.ImportECDSAPublic(&clientPriv.PublicKey),
+	tunnelID := getRandBytes(r, 16)
+	tunnelPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessionVerifier := &sessionVerifierImpl{
+		clientID:  clientID,
+		clientPub: ecies.ImportECDSAPublic(&clientPriv.PublicKey),
+		tunnelID:  tunnelID,
+		tunnelPub: ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
 	}
 
 	clientHandshaker := &clientHandshaker{
-		rand:   r,
-		id:     clientID,
-		priv:   ecies.ImportECDSA(clientPriv),
-		dest:   &serverPriv.PublicKey,
-		destID: serverID,
+		rand:      r,
+		id:        clientID,
+		priv:      ecies.ImportECDSA(clientPriv),
+		serverPub: &serverPriv.PublicKey,
+		serverID:  serverID,
+		tunnelPub: &tunnelPriv.PublicKey,
+		tunnelID:  tunnelID,
 	}
 
 	serverHandshaker := &serverHandshaker{
-		rand:       r,
-		id:         serverID,
-		priv:       serverPriv,
-		idVerifier: idVerifier,
+		rand:            r,
+		id:              serverID,
+		priv:            serverPriv,
+		sessionVerifier: sessionVerifier,
 	}
 
 	request := clientHandshaker.generateRequest()
@@ -61,7 +78,7 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !valid {
-		t.Error("response must be valid")
+		t.Fatal("response must be valid")
 	}
 
 	valid, err = clientHandshaker.processServerResponse(response)
@@ -69,10 +86,10 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !valid {
-		t.Error("response not processed correctly")
+		t.Fatal("response not processed correctly")
 	}
 
 	if !bytes.Equal(clientHandshaker.sessionKey, serverHandshaker.sessionKey) {
-		t.Error("session keys must match")
+		t.Fatal("session keys must match")
 	}
 }

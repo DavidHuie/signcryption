@@ -13,11 +13,10 @@ import (
 	"github.com/pkg/errors"
 )
 
-// This file implements the AKE1(1) session key protocol to generate a
-// shared session key between a client and a server. In this case,
-// however, the session key is used as a public channel binding. The
-// implementation uses ECIES for public key encryption and ECDSA for
-// signatures.
+// This file implements a modified version of the AKE1(1) session key
+// protocol to generate a shared session key between a client, tunnel,
+// and server. The implementation uses ECIES for public key encryption
+// and ECDSA for signatures.
 //
 // (1) A Graduate Course in Applied Cryptography by Boneh & Shoup
 
@@ -30,8 +29,10 @@ type clientHandshaker struct {
 	rand       io.Reader
 	id         []byte
 	priv       *ecies.PrivateKey
-	dest       *ecdsa.PublicKey
-	destID     []byte
+	serverPub  *ecdsa.PublicKey
+	serverID   []byte
+	tunnelPub  *ecdsa.PublicKey
+	tunnelID   []byte
 	challenge  []byte
 	sessionKey []byte
 }
@@ -40,6 +41,9 @@ type handshakeRequest struct {
 	Challenge []byte
 	ID        []byte
 	Pub       []byte
+	ServerPub []byte
+	TunnelID  []byte
+	TunnelPub []byte
 }
 
 func (c *clientHandshaker) generateRequest() *handshakeRequest {
@@ -50,6 +54,9 @@ func (c *clientHandshaker) generateRequest() *handshakeRequest {
 		Challenge: c.challenge,
 		ID:        c.id,
 		Pub:       elliptic.Marshal(edsaPub.Curve, edsaPub.X, edsaPub.Y),
+		ServerPub: elliptic.Marshal(c.serverPub.Curve, c.serverPub.X, c.serverPub.Y),
+		TunnelID:  c.tunnelID,
+		TunnelPub: elliptic.Marshal(c.tunnelPub.Curve, c.tunnelPub.X, c.tunnelPub.Y),
 	}
 }
 
@@ -62,10 +69,10 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 	}
 
 	// Validate certificate
-	if pub.X.Cmp(c.dest.X) != 0 ||
-		pub.Y.Cmp(c.dest.Y) != 0 ||
+	if pub.X.Cmp(c.serverPub.X) != 0 ||
+		pub.Y.Cmp(c.serverPub.Y) != 0 ||
 		c.priv.Curve.Params().Name != pub.Curve.Params().Name ||
-		bytes.Compare(resp.ID, c.destID) != 0 {
+		bytes.Compare(resp.ID, c.serverID) != 0 {
 		return false, nil
 	}
 
@@ -94,7 +101,7 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 		return false, nil
 	}
 	encryptedID := sessionKeyAndID[sessionKeySize:]
-	if !bytes.Equal(encryptedID, c.destID) {
+	if !bytes.Equal(encryptedID, c.serverID) {
 		return false, nil
 	}
 
@@ -103,27 +110,34 @@ func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool,
 	return true, nil
 }
 
-type IDVerifier interface {
-	VerifyID([]byte, *ecies.PublicKey) (bool, error)
+type sessionVerifier interface {
+	VerifySession([]byte, *ecies.PublicKey, []byte, *ecies.PublicKey) (bool, error)
 }
 
 type serverHandshaker struct {
-	rand       io.Reader
-	id         []byte
-	priv       *ecdsa.PrivateKey
-	idVerifier IDVerifier
-	sessionKey []byte
+	rand            io.Reader
+	id              []byte
+	priv            *ecdsa.PrivateKey
+	sessionVerifier sessionVerifier
+	sessionKey      []byte
 }
 
 type handshakeResponse struct {
-	EncryptedSessionKey []byte
-	SigR                []byte
-	SigS                []byte
-	Pub                 []byte
-	ID                  []byte
+	EncryptedSessionKey          []byte
+	EncryptedSessionKeyForTunnel []byte
+	SigR                         []byte
+	SigS                         []byte
+	Pub                          []byte
+	ID                           []byte
 }
 
 func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResponse, bool, error) {
+	// Unmarshal all public keys
+	serverX, serverY := elliptic.Unmarshal(s.priv.Curve, req.ServerPub)
+	if serverX.Cmp(s.priv.X) != 0 || serverY.Cmp(s.priv.Y) != 0 {
+		return nil, false, nil
+	}
+
 	x, y := elliptic.Unmarshal(s.priv.Curve, req.Pub)
 	pub := ecies.ImportECDSAPublic(&ecdsa.PublicKey{
 		Curve: s.priv.Curve,
@@ -131,8 +145,18 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 		Y:     y,
 	})
 
+	var tunnelPub *ecies.PublicKey
+	if len(req.TunnelPub) != 0 {
+		x, y := elliptic.Unmarshal(s.priv.Curve, req.TunnelPub)
+		tunnelPub = ecies.ImportECDSAPublic(&ecdsa.PublicKey{
+			Curve: s.priv.Curve,
+			X:     x,
+			Y:     y,
+		})
+	}
+
 	// verify the ID of the client
-	valid, err := s.idVerifier.VerifyID(req.ID, pub)
+	valid, err := s.sessionVerifier.VerifySession(req.ID, pub, req.TunnelID, tunnelPub)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error validating client ID")
 	}
@@ -150,7 +174,11 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 
 	response.EncryptedSessionKey, err = ecies.Encrypt(s.rand, pub, plaintext, nil, nil)
 	if err != nil {
-		return nil, false, errors.Wrapf(err, "error encrypting handshake session key")
+		return nil, false, errors.Wrapf(err, "error encrypting handshake session key for server")
+	}
+	response.EncryptedSessionKeyForTunnel, err = ecies.Encrypt(s.rand, tunnelPub, plaintext, nil, nil)
+	if err != nil {
+		return nil, false, errors.Wrapf(err, "error encrypting handshake session key for tunnel")
 	}
 
 	// create signature
