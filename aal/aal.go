@@ -18,9 +18,12 @@ import (
 // AAL represents all of the different functions possible with the AAL
 // signcryption scheme.
 type AAL interface {
-	Signcrypt(sender *signcryption.PrivateKey, recipient *signcryption.PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error)
-	Verify(sender, recipient *signcryption.PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error)
-	Unsigncrypt(sender *signcryption.PublicKey, recipient *signcryption.PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error)
+	Signcrypt(sender *signcryption.Certificate, recipient *signcryption.Certificate,
+		plaintext, additionalData []byte) (*SigncryptionOutput, error)
+	Verify(sender, recipient *signcryption.Certificate,
+		additionalData []byte, output *SigncryptionOutput) (bool, error)
+	Unsigncrypt(sender *signcryption.Certificate, recipient *signcryption.Certificate,
+		additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error)
 }
 
 type cipherCreator func([]byte) (cipher.Block, error)
@@ -44,12 +47,13 @@ type SigncryptionOutput struct {
 	Signature  []byte
 }
 
-func (s *signcrypter) Signcrypt(sender *signcryption.PrivateKey, recipient *signcryption.PublicKey, plaintext, additionalData []byte) (*SigncryptionOutput, error) {
-	if err := sender.PublicKey.Validate(); err != nil {
-		return nil, fmt.Errorf("error invalid public key: %s", err)
+func (s *signcrypter) Signcrypt(sender *signcryption.Certificate,
+	recipient *signcryption.Certificate, plaintext, additionalData []byte) (*SigncryptionOutput, error) {
+	if err := sender.Validate(); err != nil {
+		return nil, fmt.Errorf("error invalid certificate: %s", err)
 	}
 	if err := recipient.Validate(); err != nil {
-		return nil, fmt.Errorf("error invalid public key: %s", err)
+		return nil, fmt.Errorf("error invalid certificate: %s", err)
 	}
 
 	prime := s.curve.Params().P
@@ -69,11 +73,12 @@ func (s *signcrypter) Signcrypt(sender *signcryption.PrivateKey, recipient *sign
 	rMarshaled := elliptic.Marshal(s.curve, xR, yR)
 
 	// compute point p
-	p := new(big.Int).Add(v, sender.V)
+	p := new(big.Int).Add(v, sender.EncryptionPrivateKey.D)
 	p.Mod(p, nMod)
 
 	// compute Q
-	xQ, yQ := s.curve.ScalarMult(recipient.X, recipient.Y, p.Bytes())
+	xQ, yQ := s.curve.ScalarMult(recipient.EncryptionPublicKey.X,
+		recipient.EncryptionPublicKey.Y, p.Bytes())
 
 	// compute session key
 	hash := s.hashCreator()
@@ -121,12 +126,12 @@ func (s *signcrypter) Signcrypt(sender *signcryption.PrivateKey, recipient *sign
 	}, nil
 }
 
-func (s *signcrypter) Verify(sender, recipient *signcryption.PublicKey, additionalData []byte, output *SigncryptionOutput) (bool, error) {
+func (s *signcrypter) Verify(sender, recipient *signcryption.Certificate, additionalData []byte, output *SigncryptionOutput) (bool, error) {
 	if err := sender.Validate(); err != nil {
-		return false, fmt.Errorf("error invalid public key: %s", err)
+		return false, fmt.Errorf("error invalid certificate: %s", err)
 	}
 	if err := recipient.Validate(); err != nil {
-		return false, fmt.Errorf("error invalid public key: %s", err)
+		return false, fmt.Errorf("error invalid certificate: %s", err)
 	}
 
 	// parse r
@@ -152,7 +157,8 @@ func (s *signcrypter) Verify(sender, recipient *signcryption.PublicKey, addition
 	vX1, vY1 := s.curve.ScalarMult(mX, mY, t)
 
 	// compute verification equation #2
-	vX2, vY2 := s.curve.Add(xR, yR, sender.X, sender.Y)
+	vX2, vY2 := s.curve.Add(xR, yR, sender.EncryptionPublicKey.X,
+		sender.EncryptionPublicKey.Y)
 
 	xEqual := subtle.ConstantTimeCompare(vX1.Bytes(), vX2.Bytes())
 	yEqual := subtle.ConstantTimeCompare(vY1.Bytes(), vY2.Bytes())
@@ -165,18 +171,18 @@ type vmsg struct {
 	err   error
 }
 
-func (s *signcrypter) Unsigncrypt(sender *signcryption.PublicKey, recipient *signcryption.PrivateKey, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error) {
+func (s *signcrypter) Unsigncrypt(sender *signcryption.Certificate, recipient *signcryption.Certificate, additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error) {
 	if err := sender.Validate(); err != nil {
-		return nil, false, fmt.Errorf("error invalid public key: %s", err)
+		return nil, false, fmt.Errorf("error invalid certificate: %s", err)
 	}
-	if err := recipient.PublicKey.Validate(); err != nil {
-		return nil, false, fmt.Errorf("error invalid public key: %s", err)
+	if err := recipient.Validate(); err != nil {
+		return nil, false, fmt.Errorf("error invalid certificate: %s", err)
 	}
 
 	// verify the signature in parallel
 	vchan := make(chan *vmsg)
 	go func() {
-		valid, verr := s.Verify(sender, &recipient.PublicKey, additionalData, output)
+		valid, verr := s.Verify(sender, recipient, additionalData, output)
 		vchan <- &vmsg{valid, verr}
 	}()
 
@@ -184,8 +190,10 @@ func (s *signcrypter) Unsigncrypt(sender *signcryption.PublicKey, recipient *sig
 	xR, yR := elliptic.Unmarshal(s.curve, output.R)
 
 	// compute p & q
-	xP, yP := s.curve.Add(xR, yR, sender.X, sender.Y)
-	xQ, yQ := s.curve.ScalarMult(xP, yP, recipient.V.Bytes())
+	xP, yP := s.curve.Add(xR, yR,
+		sender.EncryptionPublicKey.X, sender.EncryptionPublicKey.Y)
+	xQ, yQ := s.curve.ScalarMult(xP, yP,
+		recipient.EncryptionPrivateKey.D.Bytes())
 
 	// compute session key
 	hash := s.hashCreator()

@@ -91,7 +91,9 @@ func UnmarshalCertificate(b []byte) (*Certificate, error) {
 	}, nil
 }
 
-// GenerateCertificate generates a random certificate.
+// GenerateCertificate generates a random certificate. The certificate
+// still needs an ID field which should be produced by an external
+// entity.
 func GenerateCertificate(rand io.Reader) (*Certificate, error) {
 	h, err := ecdsa.GenerateKey(StandardCurve, rand)
 	if err != nil {
