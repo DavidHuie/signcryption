@@ -1,13 +1,12 @@
 package stl
 
 import (
+	"bytes"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/sha256"
 	"io"
 	"math/big"
-
-	"bytes"
 
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/pkg/errors"
