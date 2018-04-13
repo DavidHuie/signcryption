@@ -2,81 +2,62 @@ package stl
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
+	"io"
 	"math/rand"
 	"testing"
 
+	"github.com/DavidHuie/signcryption"
 	"github.com/ethereum/go-ethereum/crypto/ecies"
 )
 
 type sessionVerifierImpl struct {
-	clientID     []byte
-	clientPub    *ecies.PublicKey
-	clientEncPub *ecdsa.PublicKey
-	tunnelID     []byte
-	tunnelPub    *ecies.PublicKey
+	clientCert *signcryption.Certificate
+	tunnelCert *signcryption.Certificate
+	serverCert *signcryption.Certificate
 }
 
-func (s *sessionVerifierImpl) VerifySession(clientID []byte, clientPub *ecies.PublicKey,
-	clientEncPub *ecdsa.PublicKey, tunnelID []byte, tunnelPub *ecies.PublicKey) (bool, error) {
-	clientEqual := bytes.Compare(clientID, s.clientID) == 0 &&
-		s.clientPub.X.Cmp(clientPub.X) == 0 &&
-		s.clientPub.Y.Cmp(clientPub.Y) == 0 &&
-		s.clientEncPub.X.Cmp(clientEncPub.X) == 0 &&
-		s.clientEncPub.Y.Cmp(clientEncPub.Y) == 0
+func (i *sessionVerifierImpl) VerifySession(c, t, s *signcryption.Certificate) (bool, error) {
+	return i.clientCert.Equal(c) && i.tunnelCert.Equal(t) && i.serverCert.Equal(s), nil
+}
 
-	tunnelEqual := bytes.Compare(tunnelID, s.tunnelID) == 0 &&
-		s.tunnelPub.X.Cmp(tunnelPub.X) == 0 &&
-		s.tunnelPub.Y.Cmp(tunnelPub.Y) == 0
-
-	return clientEqual && tunnelEqual, nil
+func generateCert(t *testing.T, r io.Reader) *signcryption.Certificate {
+	cert, err := signcryption.GenerateCertificate(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert.ID = getRandBytes(r, 16)
+	return cert
 }
 
 func TestEntireHandshake(t *testing.T) {
 	r := rand.New(rand.NewSource(0))
-	clientID := getRandBytes(r, 16)
-	clientPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverID := getRandBytes(r, 16)
-	serverPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tunnelID := getRandBytes(r, 16)
-	tunnelPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
+
+	clientCert := generateCert(t, r)
+	serverCert := generateCert(t, r)
+	tunnelCert := generateCert(t, r)
 	sessionVerifier := &sessionVerifierImpl{
-		clientID:     clientID,
-		clientPub:    ecies.ImportECDSAPublic(&clientPriv.PublicKey),
-		clientEncPub: &clientPriv.PublicKey,
-		tunnelID:     tunnelID,
-		tunnelPub:    ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
+		clientCert: clientCert,
+		serverCert: serverCert,
+		tunnelCert: tunnelCert,
 	}
 
 	clientHandshaker := &clientHandshaker{
-		rand:           r,
-		id:             clientID,
-		priv:           ecies.ImportECDSA(clientPriv),
-		encryptionPriv: clientPriv,
-		serverPub:      &serverPriv.PublicKey,
-		serverID:       serverID,
-		tunnelPub:      &tunnelPriv.PublicKey,
-		tunnelID:       tunnelID,
+		rand:       r,
+		clientCert: clientCert,
+		serverCert: serverCert,
+		tunnelCert: tunnelCert,
 	}
 
 	serverHandshaker := &serverHandshaker{
 		rand:            r,
-		id:              serverID,
-		priv:            serverPriv,
+		serverCert:      serverCert,
 		sessionVerifier: sessionVerifier,
 	}
 
-	request := clientHandshaker.generateRequest()
+	request, err := clientHandshaker.generateRequest()
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	response, valid, err := serverHandshaker.processRequest(request)
 	if err != nil {
@@ -94,7 +75,7 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal("response not processed correctly")
 	}
 
-	tunnelSessionKey, err := ecies.ImportECDSA(tunnelPriv).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
+	tunnelSessionKey, err := ecies.ImportECDSA(tunnelCert.EncryptionPrivateKey).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
 	if err != nil {
 		t.Fatalf("tunnel session key not decrypted correctly: %s", err)
 	}

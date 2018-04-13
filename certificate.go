@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"io"
 
+	"bytes"
+
 	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack"
 )
@@ -32,6 +34,26 @@ func (c *Certificate) Validate() error {
 		return errors.New("error: missing ID field")
 	}
 	return nil
+}
+
+// Equal checks whether two certificates are equal. Equal only checks
+// public key parameters.
+func (c *Certificate) Equal(c2 *Certificate) bool {
+	equal := true
+
+	equal = equal && bytes.Compare(c.ID, c2.ID) == 0
+
+	equal = equal &&
+		c.EncryptionPublicKey.Curve.Params().Name == c2.EncryptionPublicKey.Curve.Params().Name &&
+		c.EncryptionPublicKey.X.Cmp(c2.EncryptionPublicKey.X) == 0 &&
+		c.EncryptionPublicKey.Y.Cmp(c2.EncryptionPublicKey.Y) == 0
+
+	equal = equal &&
+		c.HandshakePublicKey.Curve.Params().Name == c2.HandshakePublicKey.Curve.Params().Name &&
+		c.HandshakePublicKey.X.Cmp(c2.HandshakePublicKey.X) == 0 &&
+		c.HandshakePublicKey.Y.Cmp(c2.HandshakePublicKey.Y) == 0
+
+	return equal
 }
 
 type marshalCert struct {

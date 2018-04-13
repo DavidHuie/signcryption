@@ -2,7 +2,6 @@ package stl
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"crypto/rand"
 	"encoding/binary"
 	"io"
@@ -12,7 +11,6 @@ import (
 
 	"github.com/DavidHuie/signcryption"
 	"github.com/DavidHuie/signcryption/aal"
-	"github.com/ethereum/go-ethereum/crypto/ecies"
 	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack"
 )
@@ -29,26 +27,17 @@ var (
 	_ net.Conn = &Conn{}
 )
 
-type SessionVerifier interface {
-	VerifySession([]byte, *ecies.PublicKey, *ecdsa.PublicKey, []byte, *ecies.PublicKey) (bool, error)
-}
-
+// ClientConfig contains configuration needed for a client connection.
 type ClientConfig struct {
-	ClientID                  []byte
-	HandshakePrivateKey       *ecies.PrivateKey
-	EncryptionPrivateKey      *signcryption.PrivateKey
-	ServerEncryptionPublicKey *signcryption.PublicKey
-	ServerHandshakePublicKey  *ecdsa.PublicKey
-	ServerID                  []byte
-	TunnelEncryptionPublicKey *ecdsa.PublicKey
-	TunnelID                  []byte
+	ClientCertificate *signcryption.Certificate
+	ServerCertificate *signcryption.Certificate
+	TunnelCeriificate *signcryption.Certificate
 }
 
+// ServerConfig contains configuration needed for a server connection.
 type ServerConfig struct {
-	ID                   []byte
-	SignaturePrivateKey  *ecdsa.PrivateKey
-	EncryptionPrivateKey *signcryption.PrivateKey
-	SessionVerifier      SessionVerifier
+	ServerCertificate *signcryption.Certificate
+	SessionVerifier   SessionVerifier
 }
 
 type Conn struct {
@@ -57,35 +46,39 @@ type Conn struct {
 	clientConfig    *ClientConfig
 	serverConfig    *ServerConfig
 	sessionKey      []byte
-	publicKey       *signcryption.PublicKey
-	privateKey      *signcryption.PrivateKey
+	remoteCert      *signcryption.Certificate
+	localCert       *signcryption.Certificate
 	aal             aal.AAL
 	readBuf         *bytes.Buffer
 	writtenSegments uint64
 	readSegments    uint64
 }
 
+// NewConn prepares a connection for use by a client.
 func NewConn(c net.Conn, config *ClientConfig) *Conn {
 	return &Conn{
 		conn:         c,
 		clientConfig: config,
-		publicKey:    config.ServerEncryptionPublicKey,
-		privateKey:   config.EncryptionPrivateKey,
+		remoteCert:   config.ServerCertificate,
+		localCert:    config.ClientCertificate,
 		aal:          aal.NewP256(),
 		readBuf:      &bytes.Buffer{},
 	}
 }
 
+// NewServerConn prepares a connection for use by a server.
 func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
 	return &Conn{
 		conn:         c,
 		serverConfig: config,
 		readBuf:      &bytes.Buffer{},
-		privateKey:   config.EncryptionPrivateKey,
+		localCert:    config.ServerCertificate,
 		aal:          aal.NewP256(),
 	}
 }
 
+// Handshake performs the handshake procedure that's needed before
+// using the connection.
 func (c *Conn) Handshake() error {
 	c.Lock()
 	defer c.Unlock()
