@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"io"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/DavidHuie/signcryption"
@@ -51,6 +52,7 @@ type ServerConfig struct {
 }
 
 type Conn struct {
+	sync.Mutex
 	conn            net.Conn
 	clientConfig    *ClientConfig
 	serverConfig    *ServerConfig
@@ -85,12 +87,16 @@ func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
 }
 
 func (c *Conn) Handshake() error {
+	c.Lock()
+	defer c.Unlock()
+
 	if len(c.sessionKey) != 0 {
 		return nil
 	}
 	if c.clientConfig != nil {
 		return c.handshakeAsClient()
 	}
+
 	return c.handshakeAsServer()
 }
 
