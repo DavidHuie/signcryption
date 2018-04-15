@@ -12,12 +12,6 @@ import (
 	"github.com/pkg/errors"
 )
 
-// SessionVerifier ensures that the STL session should exist for the
-// given parties.
-type SessionVerifier interface {
-	VerifySession(clientCert, serverCert, tunnelCert *signcryption.Certificate) (bool, error)
-}
-
 // This file implements a modified version of the AKE1(1) session key
 // protocol to generate a shared session key between a client, tunnel,
 // and server. The implementation uses ECIES for public key encryption
@@ -155,7 +149,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	}
 
 	// verify the session is valid
-	valid, err := s.sessionVerifier.VerifySession(clientCert, serverCert, tunnelCert)
+	valid, err := s.sessionVerifier.VerifySession(clientCert, tunnelCert, serverCert)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error verifying session")
 	}
@@ -193,7 +187,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	sigHash := sha256.New()
 	sigHash.Write(sigData)
 
-	sigR, sigS, err := ecdsa.Sign(s.rand, s.serverCert.EncryptionPrivateKey, sigHash.Sum(nil))
+	sigR, sigS, err := ecdsa.Sign(s.rand, s.serverCert.HandshakePrivateKey, sigHash.Sum(nil))
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error signing server handshake payload")
 	}

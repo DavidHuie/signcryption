@@ -75,7 +75,7 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal("response not processed correctly")
 	}
 
-	tunnelSessionKey, err := ecies.ImportECDSA(tunnelCert.EncryptionPrivateKey).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
+	tunnelSessionKey, err := ecies.ImportECDSA(tunnelCert.HandshakePrivateKey).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
 	if err != nil {
 		t.Fatalf("tunnel session key not decrypted correctly: %s", err)
 	}

@@ -23,6 +23,12 @@ const (
 	maxPlaintext = 16384
 )
 
+// SessionVerifier ensures that the STL session should exist for the
+// given parties.
+type SessionVerifier interface {
+	VerifySession(clientCert, serverCert, tunnelCert *signcryption.Certificate) (bool, error)
+}
+
 var (
 	_ net.Conn = &Conn{}
 )
