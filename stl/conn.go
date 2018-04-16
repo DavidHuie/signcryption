@@ -142,8 +142,7 @@ func (c *Conn) handshakeAsServer() error {
 	// Process request
 	handshaker := &serverHandshaker{
 		rand:            rand.Reader,
-		id:              c.serverConfig.ID,
-		priv:            c.serverConfig.SignaturePrivateKey,
+		serverCert:      c.serverConfig.ServerCertificate,
 		sessionVerifier: c.serverConfig.SessionVerifier,
 	}
 	response, valid, err := handshaker.processRequest(request)
@@ -167,8 +166,7 @@ func (c *Conn) handshakeAsServer() error {
 		return errors.Wrapf(err, "error writing handshake response")
 	}
 
-	c.publicKey = signcryption.PublicKeyFromECDSA(response.encryptionPublicKey,
-		request.ID)
+	c.remoteCert = response.clientCertificate
 	c.sessionKey = handshaker.sessionKey
 
 	return nil
@@ -176,16 +174,15 @@ func (c *Conn) handshakeAsServer() error {
 
 func (c *Conn) handshakeAsClient() error {
 	handshaker := &clientHandshaker{
-		rand:           rand.Reader,
-		id:             c.clientConfig.ClientID,
-		priv:           c.clientConfig.HandshakePrivateKey,
-		encryptionPriv: c.clientConfig.EncryptionPrivateKey.ToECDSA(),
-		serverPub:      c.clientConfig.ServerHandshakePublicKey,
-		serverID:       c.clientConfig.ServerID,
-		tunnelPub:      c.clientConfig.TunnelEncryptionPublicKey,
-		tunnelID:       c.clientConfig.TunnelID,
+		rand:       rand.Reader,
+		clientCert: c.clientConfig.ClientCertificate,
+		serverCert: c.clientConfig.ServerCertificate,
+		tunnelCert: c.clientConfig.TunnelCeriificate,
 	}
-	request := handshaker.generateRequest()
+	request, err := handshaker.generateRequest()
+	if err != nil {
+		return errors.Wrapf(err, "error generating handshake request")
+	}
 	requestBytes, err := msgpack.Marshal(request)
 	if err != nil {
 		return errors.Wrapf(err, "error marshaling client handshake request")
@@ -254,7 +251,7 @@ func (c *Conn) writeSegment(b []byte) error {
 	copy(additionalData, c.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.writtenSegments)
 
-	output, err := c.aal.Signcrypt(c.privateKey, c.publicKey, b, additionalData)
+	output, err := c.aal.Signcrypt(c.localCert, c.remoteCert, b, additionalData)
 	if err != nil {
 		return errors.Wrapf(err, "error signcrypting segment")
 	}
@@ -317,8 +314,8 @@ func (c *Conn) readSegment() error {
 		return errors.Wrapf(err, "error unmarshaling segment")
 	}
 
-	pt, valid, err := c.aal.Unsigncrypt(c.publicKey,
-		c.privateKey, additionalData, segment)
+	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
+		c.localCert, additionalData, segment)
 	if err != nil {
 		return errors.Wrapf(err, "error unsigncrypting segment")
 	}

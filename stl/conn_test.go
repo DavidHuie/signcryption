@@ -2,41 +2,22 @@ package stl
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/elliptic"
 	"io"
 	"math/rand"
 	"net"
 	"sync"
 	"testing"
-
-	"github.com/DavidHuie/signcryption"
-	"github.com/ethereum/go-ethereum/crypto/ecies"
 )
 
 func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
-	clientID := getRandBytes(r, 16)
-	clientPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	serverID := getRandBytes(r, 16)
-	serverPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
-	tunnelID := getRandBytes(r, 16)
-	tunnelPriv, err := ecdsa.GenerateKey(elliptic.P256(), r)
-	if err != nil {
-		t.Fatal(err)
-	}
+	clientCert := generateCert(t, r)
+	serverCert := generateCert(t, r)
+	tunnelCert := generateCert(t, r)
 
 	verifier := &sessionVerifierImpl{
-		clientID:     clientID,
-		clientPub:    ecies.ImportECDSAPublic(&clientPriv.PublicKey),
-		clientEncPub: &clientPriv.PublicKey,
-		tunnelID:     tunnelID,
-		tunnelPub:    ecies.ImportECDSAPublic(&tunnelPriv.PublicKey),
+		clientCert: clientCert,
+		serverCert: serverCert,
+		tunnelCert: tunnelCert,
 	}
 
 	listener, err := net.Listen("tcp", ":")
@@ -53,10 +34,8 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		}
 
 		serverConn = *NewServerConn(conn, &ServerConfig{
-			ID:                   serverID,
-			SignaturePrivateKey:  serverPriv,
-			EncryptionPrivateKey: signcryption.PrivateKeyFromECDSA(serverPriv, serverID),
-			SessionVerifier:      verifier,
+			ServerCertificate: serverCert,
+			SessionVerifier:   verifier,
 		})
 		if err := serverConn.Handshake(); err != nil {
 			t.Error(err)
@@ -68,14 +47,9 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		t.Fatal(err)
 	}
 	clientConn := NewConn(conn, &ClientConfig{
-		ClientID:                  clientID,
-		HandshakePrivateKey:       ecies.ImportECDSA(clientPriv),
-		ServerHandshakePublicKey:  &serverPriv.PublicKey,
-		ServerID:                  serverID,
-		ServerEncryptionPublicKey: signcryption.PublicKeyFromECDSA(&serverPriv.PublicKey, serverID),
-		TunnelEncryptionPublicKey: &tunnelPriv.PublicKey,
-		TunnelID:                  tunnelID,
-		EncryptionPrivateKey:      signcryption.PrivateKeyFromECDSA(clientPriv, clientID),
+		ClientCertificate: clientCert,
+		ServerCertificate: serverCert,
+		TunnelCeriificate: tunnelCert,
 	})
 
 	return clientConn, &serverConn, func() {

@@ -20,7 +20,7 @@ func (i *sessionVerifierImpl) VerifySession(c, t, s *signcryption.Certificate) (
 	return i.clientCert.Equal(c) && i.tunnelCert.Equal(t) && i.serverCert.Equal(s), nil
 }
 
-func generateCert(t *testing.T, r io.Reader) *signcryption.Certificate {
+func generateCert(t testing.TB, r io.Reader) *signcryption.Certificate {
 	cert, err := signcryption.GenerateCertificate(r)
 	if err != nil {
 		t.Fatal(err)
