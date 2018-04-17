@@ -32,4 +32,4 @@ P521, AES counter mode encryption, and SHA-256 for generating keys.
 
 ### Signcrypted Transport Layer (STL)
 
-A publically verifiable signcrypted transport layer.
+A transport layer similar to TLS that uses AAL signcryption .
