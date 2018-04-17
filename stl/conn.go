@@ -46,6 +46,8 @@ type ServerConfig struct {
 	SessionVerifier   SessionVerifier
 }
 
+// Conn represents a connection (either a server or a client) on a
+// signcrypted transport layer.
 type Conn struct {
 	sync.Mutex
 	conn            net.Conn
@@ -99,26 +101,32 @@ func (c *Conn) Handshake() error {
 	return c.handshakeAsServer()
 }
 
+// Close closes the connection.
 func (c *Conn) Close() error {
 	return c.conn.Close()
 }
 
+// LocalAddr returns the local address of the connection.
 func (c *Conn) LocalAddr() net.Addr {
 	return c.conn.LocalAddr()
 }
 
+// RemoteAddr returns the address of the remote end of the connection.
 func (c *Conn) RemoteAddr() net.Addr {
 	return c.conn.RemoteAddr()
 }
 
+// SetDeadline sets the read/write deadline on the connection.
 func (c *Conn) SetDeadline(t time.Time) error {
 	return c.conn.SetDeadline(t)
 }
 
+// SetReadDeadline sets the read deadline on the connection.
 func (c *Conn) SetReadDeadline(t time.Time) error {
 	return c.conn.SetReadDeadline(t)
 }
 
+// SetWriteDeadline sets the write deadline on the connection.
 func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
