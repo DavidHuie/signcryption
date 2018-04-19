@@ -132,20 +132,28 @@ func (c *Conn) SetWriteDeadline(t time.Time) error {
 	return c.conn.SetWriteDeadline(t)
 }
 
-func (c *Conn) handshakeAsServer() error {
-	// Read in request
+func readHandshakeRequest(r io.Reader) (*handshakeRequest, error) {
 	requestSizeBytes := make([]byte, 8)
-	if _, err := io.ReadFull(c.conn, requestSizeBytes); err != nil {
-		return errors.Wrapf(err, "error reading handshake request size")
+	if _, err := io.ReadFull(r, requestSizeBytes); err != nil {
+		return nil, errors.Wrapf(err, "error reading handshake request size")
 	}
 	requestSize := binary.LittleEndian.Uint64(requestSizeBytes)
 	requestBytes := make([]byte, requestSize)
-	if _, err := io.ReadFull(c.conn, requestBytes); err != nil {
-		return errors.Wrapf(err, "error reading handshake request bytes")
+	if _, err := io.ReadFull(r, requestBytes); err != nil {
+		return nil, errors.Wrapf(err, "error reading handshake request bytes")
 	}
 	var request *handshakeRequest
 	if err := msgpack.Unmarshal(requestBytes, &request); err != nil {
-		return errors.Wrapf(err, "error unmarshaling handshake request")
+		return nil, errors.Wrapf(err, "error unmarshaling handshake request")
+	}
+
+	return request, nil
+}
+
+func (c *Conn) handshakeAsServer() error {
+	request, err := readHandshakeRequest(c.conn)
+	if err != nil {
+		return errors.Wrapf(err, "error reading handshake request")
 	}
 
 	// Process request
@@ -181,6 +189,43 @@ func (c *Conn) handshakeAsServer() error {
 	return nil
 }
 
+func writeHandshakeRequest(w io.Writer, req *handshakeRequest) error {
+	requestBytes, err := msgpack.Marshal(req)
+	if err != nil {
+		return errors.Wrapf(err, "error marshaling client handshake request")
+	}
+	numRequestBytes := len(requestBytes)
+
+	handshakeBuf := make([]byte, 8+numRequestBytes)
+	binary.LittleEndian.PutUint64(handshakeBuf, uint64(numRequestBytes))
+	copy(handshakeBuf[8:], requestBytes)
+
+	// Write request to connection
+	if _, err := io.Copy(w, bytes.NewBuffer(handshakeBuf)); err != nil {
+		return errors.Wrapf(err, "error writing client handshake request bytes to writer")
+	}
+
+	return nil
+}
+
+func readHandshakeResponse(r io.Reader) (*handshakeResponse, error) {
+	responseSizeBytes := make([]byte, 8)
+	if _, err := io.ReadFull(r, responseSizeBytes); err != nil {
+		return nil, errors.Wrapf(err, "error reading handshake response size")
+	}
+	responseSize := binary.LittleEndian.Uint64(responseSizeBytes)
+	responseBytes := make([]byte, responseSize)
+	if _, err := io.ReadFull(r, responseBytes); err != nil {
+		return nil, errors.Wrapf(err, "error reading handshake response bytes")
+	}
+	var response *handshakeResponse
+	if err := msgpack.Unmarshal(responseBytes, &response); err != nil {
+		return nil, errors.Wrapf(err, "error unmarshaling handshake response")
+	}
+
+	return response, nil
+}
+
 func (c *Conn) handshakeAsClient() error {
 	handshaker := &clientHandshaker{
 		rand:       rand.Reader,
@@ -193,34 +238,14 @@ func (c *Conn) handshakeAsClient() error {
 	if err != nil {
 		return errors.Wrapf(err, "error generating handshake request")
 	}
-	requestBytes, err := msgpack.Marshal(request)
-	if err != nil {
-		return errors.Wrapf(err, "error marshaling client handshake request")
-	}
-	numRequestBytes := len(requestBytes)
-
-	handshakeBuf := make([]byte, 8+numRequestBytes)
-	binary.LittleEndian.PutUint64(handshakeBuf, uint64(numRequestBytes))
-	copy(handshakeBuf[8:], requestBytes)
-
-	// Write request to connection
-	if _, err := io.Copy(c.conn, bytes.NewBuffer(handshakeBuf)); err != nil {
-		return errors.Wrapf(err, "error writing client handshake request bytes to conn")
+	if err := writeHandshakeRequest(c.conn, request); err != nil {
+		return errors.Wrapf(err, "error writing handshake request")
 	}
 
 	// Read response from connection
-	responseSizeBytes := make([]byte, 8)
-	if _, err := io.ReadFull(c.conn, responseSizeBytes); err != nil {
-		return errors.Wrapf(err, "error reading handshake response size")
-	}
-	responseSize := binary.LittleEndian.Uint64(responseSizeBytes)
-	responseBytes := make([]byte, responseSize)
-	if _, err := io.ReadFull(c.conn, responseBytes); err != nil {
-		return errors.Wrapf(err, "error reading handshake response bytes")
-	}
-	var response *handshakeResponse
-	if err := msgpack.Unmarshal(responseBytes, &response); err != nil {
-		return errors.Wrapf(err, "error unmarshaling handshake response")
+	response, err := readHandshakeResponse(c.conn)
+	if err != nil {
+		return errors.Wrapf(err, "error reading handshake response")
 	}
 
 	// Validate response

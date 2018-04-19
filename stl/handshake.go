@@ -69,46 +69,67 @@ func (c *clientHandshaker) generateRequest() (*handshakeRequest, error) {
 	}, nil
 }
 
-func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool, error) {
+func validateServerResponse(challenge []byte, resp *handshakeResponse,
+	clientCert, serverCert *signcryption.Certificate) (bool, error) {
 	serverCert, err := signcryption.UnmarshalCertificate(resp.ServerCertificate)
 	if err != nil {
 		return false, errors.Wrapf(err, "error unmarshaling server cert")
 	}
-	if !serverCert.Equal(c.serverCert) {
+	if !serverCert.Equal(serverCert) {
 		return false, nil
 	}
 
 	// Validate signature
-	sigSize := len(c.challenge) + len(resp.EncryptedSessionKey) + len(c.clientCert.ID)
+	sigSize := handshakeChallengeSize + len(resp.EncryptedSessionKey) + len(clientCert.ID)
 	sigData := make([]byte, sigSize)
-	copy(sigData, c.challenge)
+	copy(sigData, challenge)
 	copy(sigData[len(resp.EncryptedSessionKey):], resp.EncryptedSessionKey)
-	copy(sigData[len(c.clientCert.ID):], c.clientCert.ID)
+	copy(sigData[len(clientCert.ID):], clientCert.ID)
 	sigHash := sha256.New()
 	sigHash.Write(sigData)
 
 	validSig := ecdsa.Verify(
-		c.serverCert.HandshakePublicKey,
+		serverCert.HandshakePublicKey,
 		sigHash.Sum(nil),
 		new(big.Int).SetBytes(resp.SigR),
 		new(big.Int).SetBytes(resp.SigS),
 	)
-	if !validSig {
+
+	return validSig, nil
+}
+
+func getSessionKey(ciphertext []byte, privateKey *ecdsa.PrivateKey,
+	serverCert *signcryption.Certificate) ([]byte, bool, error) {
+	sessionKeyAndID, err := ecies.ImportECDSA(privateKey).
+		Decrypt(ciphertext, nil, nil)
+	if err == ecies.ErrInvalidMessage {
+		return nil, false, nil
+	}
+	encryptedID := sessionKeyAndID[sessionKeySize:]
+	if !bytes.Equal(encryptedID, serverCert.ID) {
+		return nil, false, nil
+	}
+	return sessionKeyAndID[:sessionKeySize], true, nil
+}
+
+func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool, error) {
+	valid, err := validateServerResponse(c.challenge, resp, c.clientCert, c.serverCert)
+	if err != nil {
+		return false, errors.Wrapf(err, "error validating server response")
+	}
+	if !valid {
 		return false, nil
 	}
 
 	// Decrypt session key
-	sessionKeyAndID, err := ecies.ImportECDSA(c.clientCert.HandshakePrivateKey).
-		Decrypt(resp.EncryptedSessionKey, nil, nil)
-	if err == ecies.ErrInvalidMessage {
+	c.sessionKey, valid, err = getSessionKey(resp.EncryptedSessionKey,
+		c.clientCert.HandshakePrivateKey, c.serverCert)
+	if err != nil {
+		return false, errors.Wrapf(err, "error decrypting session key")
+	}
+	if !valid {
 		return false, nil
 	}
-	encryptedID := sessionKeyAndID[sessionKeySize:]
-	if !bytes.Equal(encryptedID, c.serverCert.ID) {
-		return false, nil
-	}
-
-	c.sessionKey = sessionKeyAndID[:sessionKeySize]
 
 	return true, nil
 }
