@@ -29,6 +29,7 @@ type clientHandshaker struct {
 	clientCert *signcryption.Certificate
 	serverCert *signcryption.Certificate
 	tunnelCert *signcryption.Certificate
+	topic      []byte
 	challenge  []byte
 	sessionKey []byte
 }
@@ -38,6 +39,9 @@ type handshakeRequest struct {
 	ClientCert []byte
 	ServerCert []byte
 	TunnelCert []byte
+
+	// This is metadata that can be used for routing the connection.
+	Topic []byte
 }
 
 func (c *clientHandshaker) generateRequest() (*handshakeRequest, error) {
@@ -61,6 +65,7 @@ func (c *clientHandshaker) generateRequest() (*handshakeRequest, error) {
 		ClientCert: client,
 		ServerCert: server,
 		TunnelCert: tunnel,
+		Topic:      c.topic,
 	}, nil
 }
 
@@ -149,7 +154,8 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	}
 
 	// verify the session is valid
-	valid, err := s.sessionVerifier.VerifySession(clientCert, tunnelCert, serverCert)
+	valid, err := s.sessionVerifier.VerifySession(req.Topic, clientCert,
+		tunnelCert, serverCert)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error verifying session")
 	}

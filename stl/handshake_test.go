@@ -11,13 +11,15 @@ import (
 )
 
 type sessionVerifierImpl struct {
+	topic      []byte
 	clientCert *signcryption.Certificate
 	tunnelCert *signcryption.Certificate
 	serverCert *signcryption.Certificate
 }
 
-func (i *sessionVerifierImpl) VerifySession(c, t, s *signcryption.Certificate) (bool, error) {
-	return i.clientCert.Equal(c) && i.tunnelCert.Equal(t) && i.serverCert.Equal(s), nil
+func (i *sessionVerifierImpl) VerifySession(topic []byte, c, t, s *signcryption.Certificate) (bool, error) {
+	return bytes.Equal(i.topic, topic) && i.clientCert.Equal(c) &&
+		i.tunnelCert.Equal(t) && i.serverCert.Equal(s), nil
 }
 
 func generateCert(t testing.TB, r io.Reader) *signcryption.Certificate {

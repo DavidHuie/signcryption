@@ -26,7 +26,7 @@ const (
 // SessionVerifier ensures that the STL session should exist for the
 // given parties.
 type SessionVerifier interface {
-	VerifySession(clientCert, serverCert, tunnelCert *signcryption.Certificate) (bool, error)
+	VerifySession(topic []byte, clientCert, serverCert, tunnelCert *signcryption.Certificate) (bool, error)
 }
 
 var (
@@ -35,6 +35,7 @@ var (
 
 // ClientConfig contains configuration needed for a client connection.
 type ClientConfig struct {
+	Topic             []byte
 	ClientCertificate *signcryption.Certificate
 	ServerCertificate *signcryption.Certificate
 	TunnelCeriificate *signcryption.Certificate
@@ -186,6 +187,7 @@ func (c *Conn) handshakeAsClient() error {
 		clientCert: c.clientConfig.ClientCertificate,
 		serverCert: c.clientConfig.ServerCertificate,
 		tunnelCert: c.clientConfig.TunnelCeriificate,
+		topic:      c.clientConfig.Topic,
 	}
 	request, err := handshaker.generateRequest()
 	if err != nil {
@@ -301,26 +303,36 @@ func (c *Conn) Read(b []byte) (int, error) {
 	return c.readBuf.Read(b)
 }
 
-func (c *Conn) readSegment() error {
-	additionalData := make([]byte, len(c.sessionKey)+8)
-	copy(additionalData, c.sessionKey)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
-
+func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
 	numBytesBytes := make([]byte, 8)
-	if _, err := io.ReadFull(c.conn, numBytesBytes); err != nil {
-		return errors.Wrapf(err, "error reading segment num bytes")
+	if _, err := io.ReadFull(r, numBytesBytes); err != nil {
+		return nil, nil, errors.Wrapf(err, "error reading segment num bytes")
 	}
 	numBytes := binary.LittleEndian.Uint64(numBytesBytes)
 
 	segmentBytes := make([]byte, numBytes)
-	if _, err := io.ReadFull(c.conn, segmentBytes); err != nil {
-		return errors.Wrapf(err, "error reading segment bytes")
+	if _, err := io.ReadFull(r, segmentBytes); err != nil {
+		return nil, nil, errors.Wrapf(err, "error reading segment bytes")
 	}
 
 	var segment *aal.SigncryptionOutput
 	if err := msgpack.Unmarshal(segmentBytes, &segment); err != nil {
-		return errors.Wrapf(err, "error unmarshaling segment")
+		return nil, nil, errors.Wrapf(err, "error unmarshaling segment")
 	}
+
+	return segment, segmentBytes, nil
+}
+
+func (c *Conn) readSegment() error {
+	segment, _, err := readSegment(c.conn)
+	if err != nil {
+		return errors.Wrapf(err, "error reading segment")
+	}
+
+	// Prepare additional data
+	additionalData := make([]byte, sessionKeySize+8)
+	copy(additionalData, c.sessionKey)
+	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
 
 	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
 		c.localCert, additionalData, segment)

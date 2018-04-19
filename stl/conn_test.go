@@ -18,6 +18,7 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		clientCert: clientCert,
 		serverCert: serverCert,
 		tunnelCert: tunnelCert,
+		topic:      []byte("t1"),
 	}
 
 	listener, err := net.Listen("tcp", ":")
@@ -39,6 +40,7 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		})
 		if err := serverConn.Handshake(); err != nil {
 			t.Error(err)
+			conn.Close()
 		}
 	}()
 
@@ -47,6 +49,7 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		t.Fatal(err)
 	}
 	clientConn := NewConn(conn, &ClientConfig{
+		Topic:             []byte("t1"),
 		ClientCertificate: clientCert,
 		ServerCertificate: serverCert,
 		TunnelCeriificate: tunnelCert,
