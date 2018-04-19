@@ -14,12 +14,16 @@ import (
 	"github.com/pkg/errors"
 )
 
+// ServerConnFetcher can fetch a server connection based on the client
+// topic and the server certificate.
 type ServerConnFetcher interface {
 	GetConn(topic []byte, cert *signcryption.Certificate) (net.Conn, error)
 }
 
+// SegmentProcessor processes a segment. This should be used for doing
+// out of band things, such as billing.
 type SegmentProcessor interface {
-	ProcessSegment(*aal.SigncryptionOutput)
+	ProcessSegment(sender, reciever *signcryption.Certificate, output *aal.SigncryptionOutput)
 }
 
 type Relayer struct {
@@ -44,6 +48,8 @@ func NewRelayer(client net.Conn, relayerCert *signcryption.Certificate, verifier
 	return &Relayer{
 		client:      client,
 		relayerCert: relayerCert,
+		verifier:    verifier,
+		connFetcher: connFetcher,
 		signcrypter: signcrypter,
 		processor:   processor,
 	}
@@ -154,7 +160,7 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	// inform processors
 	// TODO: maybe do this async?
 	if processor != nil {
-		processor.ProcessSegment(segment)
+		processor.ProcessSegment(senderCert, recipientCert, segment)
 	}
 
 	// relay data
