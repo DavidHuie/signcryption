@@ -66,7 +66,7 @@ func (r *Relayer) verifyRequest(req *handshakeRequest) (bool, error) {
 		return false, errors.Wrapf(err, "error unmarshaling server cert")
 	}
 
-	relayerCert, err := signcryption.UnmarshalCertificate(req.TunnelCert)
+	relayerCert, err := signcryption.UnmarshalCertificate(req.RelayerCert)
 	if err != nil {
 		return false, errors.Wrapf(err, "error unmarshaling relayer cert")
 	}
@@ -121,9 +121,9 @@ func (r *Relayer) processHandshake() (bool, error) {
 		return false, nil
 	}
 
-	// Decrypt session key for tunnel
+	// Decrypt session key for relayer
 	var validKey bool
-	r.sessionKey, validKey, err = getSessionKey(response.EncryptedSessionKeyForTunnel,
+	r.sessionKey, validKey, err = getSessionKey(response.EncryptedSessionKeyForRelayer,
 		r.relayerCert.HandshakePrivateKey, r.serverCert)
 	if err != nil {
 		return false, errors.Wrapf(err, "error decrypting session key")

@@ -12,13 +12,13 @@ import (
 func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 	clientCert := generateCert(t, r)
 	serverCert := generateCert(t, r)
-	tunnelCert := generateCert(t, r)
+	relayerCert := generateCert(t, r)
 
 	verifier := &sessionVerifierImpl{
-		clientCert: clientCert,
-		serverCert: serverCert,
-		tunnelCert: tunnelCert,
-		topic:      []byte("t1"),
+		clientCert:  clientCert,
+		serverCert:  serverCert,
+		relayerCert: relayerCert,
+		topic:       []byte("t1"),
 	}
 
 	listener, err := net.Listen("tcp", ":")
@@ -49,10 +49,10 @@ func getClientServer(t testing.TB, r io.Reader) (*Conn, *Conn, func()) {
 		t.Fatal(err)
 	}
 	clientConn := NewConn(conn, &ClientConfig{
-		Topic:             []byte("t1"),
-		ClientCertificate: clientCert,
-		ServerCertificate: serverCert,
-		TunnelCeriificate: tunnelCert,
+		Topic:              []byte("t1"),
+		ClientCertificate:  clientCert,
+		ServerCertificate:  serverCert,
+		RelayerCeriificate: relayerCert,
 	})
 
 	return clientConn, &serverConn, func() {

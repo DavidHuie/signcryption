@@ -13,9 +13,9 @@ import (
 )
 
 // This file implements a modified version of the AKE1(1) session key
-// protocol to generate a shared session key between a client, tunnel,
-// and server. The implementation uses ECIES for public key encryption
-// and ECDSA for signatures.
+// protocol to generate a shared session key between a client,
+// relayer, and server. The implementation uses ECIES for public key
+// encryption and ECDSA for signatures.
 //
 // (1) A Graduate Course in Applied Cryptography by Boneh & Shoup
 
@@ -25,20 +25,20 @@ const (
 )
 
 type clientHandshaker struct {
-	rand       io.Reader
-	clientCert *signcryption.Certificate
-	serverCert *signcryption.Certificate
-	tunnelCert *signcryption.Certificate
-	topic      []byte
-	challenge  []byte
-	sessionKey []byte
+	rand        io.Reader
+	clientCert  *signcryption.Certificate
+	serverCert  *signcryption.Certificate
+	relayerCert *signcryption.Certificate
+	topic       []byte
+	challenge   []byte
+	sessionKey  []byte
 }
 
 type handshakeRequest struct {
-	Challenge  []byte
-	ClientCert []byte
-	ServerCert []byte
-	TunnelCert []byte
+	Challenge   []byte
+	ClientCert  []byte
+	ServerCert  []byte
+	RelayerCert []byte
 
 	// This is metadata that can be used for routing the connection.
 	Topic []byte
@@ -55,17 +55,17 @@ func (c *clientHandshaker) generateRequest() (*handshakeRequest, error) {
 	if err != nil {
 		return nil, errors.Wrapf(err, "error marshaling server certificate")
 	}
-	tunnel, err := c.tunnelCert.Marshal()
+	relayer, err := c.relayerCert.Marshal()
 	if err != nil {
-		return nil, errors.Wrapf(err, "error marshaling tunnel certificate")
+		return nil, errors.Wrapf(err, "error marshaling relayer certificate")
 	}
 
 	return &handshakeRequest{
-		Challenge:  c.challenge,
-		ClientCert: client,
-		ServerCert: server,
-		TunnelCert: tunnel,
-		Topic:      c.topic,
+		Challenge:   c.challenge,
+		ClientCert:  client,
+		ServerCert:  server,
+		RelayerCert: relayer,
+		Topic:       c.topic,
 	}, nil
 }
 
@@ -142,11 +142,11 @@ type serverHandshaker struct {
 }
 
 type handshakeResponse struct {
-	EncryptedSessionKey          []byte
-	EncryptedSessionKeyForTunnel []byte
-	SigR                         []byte
-	SigS                         []byte
-	ServerCertificate            []byte
+	EncryptedSessionKey           []byte
+	EncryptedSessionKeyForRelayer []byte
+	SigR                          []byte
+	SigS                          []byte
+	ServerCertificate             []byte
 
 	// This is used internally by connections
 	clientCertificate *signcryption.Certificate
@@ -161,11 +161,11 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error unmarshaling server cert")
 	}
-	var tunnelCert *signcryption.Certificate
-	if len(req.TunnelCert) > 0 {
-		tunnelCert, err = signcryption.UnmarshalCertificate(req.TunnelCert)
+	var relayerCert *signcryption.Certificate
+	if len(req.RelayerCert) > 0 {
+		relayerCert, err = signcryption.UnmarshalCertificate(req.RelayerCert)
 		if err != nil {
-			return nil, false, errors.Wrapf(err, "error unmarshaling tunnel cert")
+			return nil, false, errors.Wrapf(err, "error unmarshaling relayer cert")
 		}
 	}
 
@@ -176,7 +176,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 
 	// verify the session is valid
 	valid, err := s.sessionVerifier.VerifySession(req.Topic, clientCert,
-		tunnelCert, serverCert)
+		relayerCert, serverCert)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error verifying session")
 	}
@@ -197,11 +197,11 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error encrypting handshake session key for server")
 	}
-	if tunnelCert != nil {
-		response.EncryptedSessionKeyForTunnel, err = ecies.Encrypt(s.rand,
-			ecies.ImportECDSAPublic(tunnelCert.HandshakePublicKey), plaintext, nil, nil)
+	if relayerCert != nil {
+		response.EncryptedSessionKeyForRelayer, err = ecies.Encrypt(s.rand,
+			ecies.ImportECDSAPublic(relayerCert.HandshakePublicKey), plaintext, nil, nil)
 		if err != nil {
-			return nil, false, errors.Wrapf(err, "error encrypting handshake session key for tunnel")
+			return nil, false, errors.Wrapf(err, "error encrypting handshake session key for relayer")
 		}
 	}
 

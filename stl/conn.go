@@ -26,7 +26,7 @@ const (
 // SessionVerifier ensures that the STL session should exist for the
 // given parties.
 type SessionVerifier interface {
-	VerifySession(topic []byte, clientCert, serverCert, tunnelCert *signcryption.Certificate) (bool, error)
+	VerifySession(topic []byte, clientCert, serverCert, relayerCert *signcryption.Certificate) (bool, error)
 }
 
 var (
@@ -35,10 +35,10 @@ var (
 
 // ClientConfig contains configuration needed for a client connection.
 type ClientConfig struct {
-	Topic             []byte
-	ClientCertificate *signcryption.Certificate
-	ServerCertificate *signcryption.Certificate
-	TunnelCeriificate *signcryption.Certificate
+	Topic              []byte
+	ClientCertificate  *signcryption.Certificate
+	ServerCertificate  *signcryption.Certificate
+	RelayerCeriificate *signcryption.Certificate
 }
 
 // ServerConfig contains configuration needed for a server connection.
@@ -228,11 +228,11 @@ func readHandshakeResponse(r io.Reader) (*handshakeResponse, error) {
 
 func (c *Conn) handshakeAsClient() error {
 	handshaker := &clientHandshaker{
-		rand:       rand.Reader,
-		clientCert: c.clientConfig.ClientCertificate,
-		serverCert: c.clientConfig.ServerCertificate,
-		tunnelCert: c.clientConfig.TunnelCeriificate,
-		topic:      c.clientConfig.Topic,
+		rand:        rand.Reader,
+		clientCert:  c.clientConfig.ClientCertificate,
+		serverCert:  c.clientConfig.ServerCertificate,
+		relayerCert: c.clientConfig.RelayerCeriificate,
+		topic:       c.clientConfig.Topic,
 	}
 	request, err := handshaker.generateRequest()
 	if err != nil {

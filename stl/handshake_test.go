@@ -11,15 +11,15 @@ import (
 )
 
 type sessionVerifierImpl struct {
-	topic      []byte
-	clientCert *signcryption.Certificate
-	tunnelCert *signcryption.Certificate
-	serverCert *signcryption.Certificate
+	topic       []byte
+	clientCert  *signcryption.Certificate
+	relayerCert *signcryption.Certificate
+	serverCert  *signcryption.Certificate
 }
 
 func (i *sessionVerifierImpl) VerifySession(topic []byte, c, t, s *signcryption.Certificate) (bool, error) {
 	return bytes.Equal(i.topic, topic) && i.clientCert.Equal(c) &&
-		i.tunnelCert.Equal(t) && i.serverCert.Equal(s), nil
+		i.relayerCert.Equal(t) && i.serverCert.Equal(s), nil
 }
 
 func generateCert(t testing.TB, r io.Reader) *signcryption.Certificate {
@@ -36,18 +36,18 @@ func TestEntireHandshake(t *testing.T) {
 
 	clientCert := generateCert(t, r)
 	serverCert := generateCert(t, r)
-	tunnelCert := generateCert(t, r)
+	relayerCert := generateCert(t, r)
 	sessionVerifier := &sessionVerifierImpl{
-		clientCert: clientCert,
-		serverCert: serverCert,
-		tunnelCert: tunnelCert,
+		clientCert:  clientCert,
+		serverCert:  serverCert,
+		relayerCert: relayerCert,
 	}
 
 	clientHandshaker := &clientHandshaker{
-		rand:       r,
-		clientCert: clientCert,
-		serverCert: serverCert,
-		tunnelCert: tunnelCert,
+		rand:        r,
+		clientCert:  clientCert,
+		serverCert:  serverCert,
+		relayerCert: relayerCert,
 	}
 
 	serverHandshaker := &serverHandshaker{
@@ -77,14 +77,14 @@ func TestEntireHandshake(t *testing.T) {
 		t.Fatal("response not processed correctly")
 	}
 
-	tunnelSessionKey, err := ecies.ImportECDSA(tunnelCert.HandshakePrivateKey).Decrypt(response.EncryptedSessionKeyForTunnel, nil, nil)
+	relayerSessionKey, err := ecies.ImportECDSA(relayerCert.HandshakePrivateKey).Decrypt(response.EncryptedSessionKeyForRelayer, nil, nil)
 	if err != nil {
-		t.Fatalf("tunnel session key not decrypted correctly: %s", err)
+		t.Fatalf("relayer session key not decrypted correctly: %s", err)
 	}
-	tunnelSessionKey = tunnelSessionKey[:sessionKeySize]
+	relayerSessionKey = relayerSessionKey[:sessionKeySize]
 
 	if !bytes.Equal(clientHandshaker.sessionKey, serverHandshaker.sessionKey) ||
-		!bytes.Equal(clientHandshaker.sessionKey, tunnelSessionKey) {
+		!bytes.Equal(clientHandshaker.sessionKey, relayerSessionKey) {
 		t.Fatal("session keys must match")
 	}
 }
