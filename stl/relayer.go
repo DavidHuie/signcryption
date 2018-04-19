@@ -24,22 +24,23 @@ type SegmentProcessor interface {
 
 type Relayer struct {
 	sync.Mutex
+	client      net.Conn
+	verifier    SessionVerifier
+	connFetcher ServerConnFetcher
+	relayerCert *signcryption.Certificate
+	signcrypter aal.AAL
+	processor   SegmentProcessor
+
 	closed                         bool
-	client                         net.Conn
 	server                         net.Conn
-	verifier                       SessionVerifier
-	connFetcher                    ServerConnFetcher
+	clientSegments, serverSegments uint64
+	sessionKey                     []byte
 	clientCert                     *signcryption.Certificate
 	serverCert                     *signcryption.Certificate
-	relayerCert                    *signcryption.Certificate
-	sessionKey                     []byte
-	signcrypter                    aal.AAL
-	clientSegments, serverSegments uint64
-	processor                      SegmentProcessor
 }
 
-func NewRelayer(client net.Conn, relayerCert *signcryption.Certificate,
-	signcrypter aal.AAL, processor SegmentProcessor) *Relayer {
+func NewRelayer(client net.Conn, relayerCert *signcryption.Certificate, verifier SessionVerifier,
+	connFetcher ServerConnFetcher, signcrypter aal.AAL, processor SegmentProcessor) *Relayer {
 	return &Relayer{
 		client:      client,
 		relayerCert: relayerCert,
