@@ -22,7 +22,7 @@ type AAL interface {
 		plaintext, additionalData []byte) (*SigncryptionOutput, error)
 	Verify(sender, recipient *signcryption.Certificate,
 		additionalData []byte, output *SigncryptionOutput) (bool, error)
-	Unsigncrypt(sender *signcryption.Certificate, recipient *signcryption.Certificate,
+	Unsigncrypt(sender, recipient *signcryption.Certificate,
 		additionalData []byte, output *SigncryptionOutput) ([]byte, bool, error)
 }
 

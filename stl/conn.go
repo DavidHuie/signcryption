@@ -345,7 +345,12 @@ func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
 		return nil, nil, errors.Wrapf(err, "error unmarshaling segment")
 	}
 
-	return segment, segmentBytes, nil
+	// This is used when this payload is relayed
+	total := make([]byte, len(segmentBytes)+len(numBytesBytes))
+	copy(total, numBytesBytes)
+	copy(total[len(numBytesBytes):], segmentBytes)
+
+	return segment, total, nil
 }
 
 func (c *Conn) readSegment() error {
