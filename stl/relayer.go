@@ -4,10 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"log"
 	"net"
 	"sync"
-
-	"log"
 
 	"github.com/DavidHuie/signcryption"
 	"github.com/DavidHuie/signcryption/aal"
@@ -26,15 +25,24 @@ type SegmentProcessor interface {
 	ProcessSegment(sender, reciever *signcryption.Certificate, output *aal.SigncryptionOutput)
 }
 
+// RelayerConfig represents configuration for a Relayer.
+type RelayerConfig struct {
+	Verifier    SessionVerifier
+	ConnFetcher ServerConnFetcher
+	RelayerCert *signcryption.Certificate
+	Signcrypter aal.AAL
+	Processor   SegmentProcessor
+}
+
+// Relayer stands in between a client/server stl connection. A Relayer
+// can provide service discovery, metrics, and other services at this
+// layer.
 type Relayer struct {
 	sync.Mutex
-	client      net.Conn
-	verifier    SessionVerifier
-	connFetcher ServerConnFetcher
-	relayerCert *signcryption.Certificate
-	signcrypter aal.AAL
-	processor   SegmentProcessor
+	client net.Conn
+	config *RelayerConfig
 
+	// Dynamic fields
 	closed                         bool
 	server                         net.Conn
 	clientSegments, serverSegments uint64
@@ -43,15 +51,11 @@ type Relayer struct {
 	serverCert                     *signcryption.Certificate
 }
 
-func NewRelayer(client net.Conn, relayerCert *signcryption.Certificate, verifier SessionVerifier,
-	connFetcher ServerConnFetcher, signcrypter aal.AAL, processor SegmentProcessor) *Relayer {
+// NewRelayer instantiates a new Relayer.
+func NewRelayer(client net.Conn, config *RelayerConfig) *Relayer {
 	return &Relayer{
-		client:      client,
-		relayerCert: relayerCert,
-		verifier:    verifier,
-		connFetcher: connFetcher,
-		signcrypter: signcrypter,
-		processor:   processor,
+		client: client,
+		config: config,
 	}
 }
 
@@ -70,12 +74,12 @@ func (r *Relayer) verifyRequest(req *handshakeRequest) (bool, error) {
 	if err != nil {
 		return false, errors.Wrapf(err, "error unmarshaling relayer cert")
 	}
-	if !relayerCert.Equal(r.relayerCert) {
+	if !relayerCert.Equal(r.config.RelayerCert) {
 		return false, nil
 	}
 
-	return r.verifier.VerifySession(req.Topic, r.clientCert,
-		r.serverCert, r.relayerCert)
+	return r.config.Verifier.VerifySession(req.Topic, r.clientCert,
+		r.serverCert, r.config.RelayerCert)
 }
 
 func (r *Relayer) processHandshake() (bool, error) {
@@ -95,7 +99,7 @@ func (r *Relayer) processHandshake() (bool, error) {
 	}
 
 	// Fetch server conn
-	r.server, err = r.connFetcher.GetConn(request.Topic, r.serverCert)
+	r.server, err = r.config.ConnFetcher.GetConn(request.Topic, r.serverCert)
 	if err != nil {
 		return false, errors.Wrapf(err, "error fetching server connection")
 	}
@@ -123,8 +127,11 @@ func (r *Relayer) processHandshake() (bool, error) {
 
 	// Decrypt session key for relayer
 	var validKey bool
-	r.sessionKey, validKey, err = getSessionKey(response.EncryptedSessionKeyForRelayer,
-		r.relayerCert.HandshakePrivateKey, r.serverCert)
+	r.sessionKey, validKey, err = getSessionKey(
+		response.EncryptedSessionKeyForRelayer,
+		r.config.RelayerCert.HandshakePrivateKey,
+		r.serverCert,
+	)
 	if err != nil {
 		return false, errors.Wrapf(err, "error decrypting session key")
 	}
@@ -148,7 +155,7 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	copy(additionalData, r.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(r.sessionKey):], *counter)
 
-	valid, err := r.signcrypter.Verify(senderCert, recipientCert,
+	valid, err := r.config.Signcrypter.Verify(senderCert, recipientCert,
 		additionalData, segment)
 	if err != nil {
 		return false, errors.Wrapf(err, "error verifying segment")
@@ -202,7 +209,7 @@ func (r *Relayer) Start() error {
 			}
 
 			valid, err := r.processSegment(r.client, r.server, r.clientCert,
-				r.serverCert, r.processor, &r.clientSegments)
+				r.serverCert, r.config.Processor, &r.clientSegments)
 			if err != nil {
 				log.Printf("error processing segment: %s", err)
 				break
@@ -223,7 +230,7 @@ func (r *Relayer) Start() error {
 			}
 
 			valid, err := r.processSegment(r.server, r.client, r.serverCert,
-				r.clientCert, r.processor, &r.serverSegments)
+				r.clientCert, r.config.Processor, &r.serverSegments)
 			if err != nil {
 				log.Printf("error processing segment: %s", err)
 				break
