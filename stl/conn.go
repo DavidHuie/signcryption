@@ -26,7 +26,8 @@ const (
 // SessionVerifier ensures that the STL session should exist for the
 // given parties.
 type SessionVerifier interface {
-	VerifySession(topic []byte, clientCert, serverCert, relayerCert *signcryption.Certificate) (bool, error)
+	VerifySession(topic []byte, clientCert, serverCert,
+		relayerCert *signcryption.Certificate) (bool, error)
 }
 
 var (
@@ -150,6 +151,21 @@ func readHandshakeRequest(r io.Reader) (*handshakeRequest, error) {
 	return request, nil
 }
 
+func writeHandshakeResponse(w io.Writer, response *handshakeResponse) error {
+	responseBytes, err := msgpack.Marshal(response)
+	if err != nil {
+		return errors.Wrapf(err, "error marshaling handshake response")
+	}
+	numResponseBytes := len(responseBytes)
+	responseBuf := make([]byte, 8+numResponseBytes)
+	binary.LittleEndian.PutUint64(responseBuf, uint64(numResponseBytes))
+	copy(responseBuf[8:], responseBytes)
+	if _, err := io.Copy(w, bytes.NewBuffer(responseBuf)); err != nil {
+		return errors.Wrapf(err, "error writing handshake response")
+	}
+	return nil
+}
+
 func (c *Conn) handshakeAsServer() error {
 	request, err := readHandshakeRequest(c.conn)
 	if err != nil {
@@ -170,16 +186,7 @@ func (c *Conn) handshakeAsServer() error {
 		return errors.New("error: handshake request is not valid")
 	}
 
-	// Write response
-	responseBytes, err := msgpack.Marshal(response)
-	if err != nil {
-		return errors.Wrapf(err, "error marshaling handshake response")
-	}
-	numResponseBytes := len(responseBytes)
-	responseBuf := make([]byte, 8+numResponseBytes)
-	binary.LittleEndian.PutUint64(responseBuf, uint64(numResponseBytes))
-	copy(responseBuf[8:], responseBytes)
-	if _, err := io.Copy(c.conn, bytes.NewBuffer(responseBuf)); err != nil {
+	if err := writeHandshakeResponse(c.conn, response); err != nil {
 		return errors.Wrapf(err, "error writing handshake response")
 	}
 

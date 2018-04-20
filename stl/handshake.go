@@ -176,7 +176,7 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 
 	// verify the session is valid
 	valid, err := s.sessionVerifier.VerifySession(req.Topic, clientCert,
-		relayerCert, serverCert)
+		serverCert, relayerCert)
 	if err != nil {
 		return nil, false, errors.Wrapf(err, "error verifying session")
 	}

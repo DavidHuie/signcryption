@@ -22,7 +22,8 @@ type ServerConnFetcher interface {
 // SegmentProcessor processes a segment. This should be used for doing
 // out of band things, such as billing.
 type SegmentProcessor interface {
-	ProcessSegment(sender, reciever *signcryption.Certificate, output *aal.SigncryptionOutput)
+	ProcessSegment(sender, reciever *signcryption.Certificate,
+		output *aal.SigncryptionOutput)
 }
 
 // RelayerConfig represents configuration for a Relayer.
@@ -137,6 +138,11 @@ func (r *Relayer) processHandshake() (bool, error) {
 	}
 	if !validKey {
 		return false, nil
+	}
+
+	// Send response to client
+	if err := writeHandshakeResponse(r.client, response); err != nil {
+		return false, errors.Wrapf(err, "error writing handshake response to client")
 	}
 
 	return true, nil

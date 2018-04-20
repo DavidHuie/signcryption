@@ -17,7 +17,7 @@ type sessionVerifierImpl struct {
 	serverCert  *signcryption.Certificate
 }
 
-func (i *sessionVerifierImpl) VerifySession(topic []byte, c, t, s *signcryption.Certificate) (bool, error) {
+func (i *sessionVerifierImpl) VerifySession(topic []byte, c, s, t *signcryption.Certificate) (bool, error) {
 	return bytes.Equal(i.topic, topic) && i.clientCert.Equal(c) &&
 		i.relayerCert.Equal(t) && i.serverCert.Equal(s), nil
 }
