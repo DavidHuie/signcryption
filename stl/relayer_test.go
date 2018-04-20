@@ -5,6 +5,7 @@ import (
 	"io"
 	"math/rand"
 	"net"
+	"sync"
 	"testing"
 
 	"github.com/DavidHuie/signcryption"
@@ -124,5 +125,157 @@ func TestRelayerHandshake(t *testing.T) {
 	if !bytes.Equal(relayer.sessionKey, clientConn.sessionKey) ||
 		!bytes.Equal(clientConn.sessionKey, serverConn.sessionKey) {
 		t.Fatal("session keys should be equal")
+	}
+}
+
+func TestRelayerBidirectionalReadWrite(t *testing.T) {
+	currentRand := int64(0)
+	getRand := func() *rand.Rand {
+		currentRand++
+		return rand.New(rand.NewSource(currentRand))
+	}
+
+	clientConn, serverConn, _, cleanup := getClientServerRelayer(t, getRand())
+	defer cleanup()
+
+	if err := clientConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+
+	numBytes := int64(100 * 1024 * 1024)
+
+	rand1 := make([]byte, numBytes)
+	rand2 := make([]byte, numBytes)
+
+	clientReader := &bytes.Buffer{}
+	serverReader := &bytes.Buffer{}
+
+	if _, err := io.ReadFull(getRand(), rand1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(getRand(), rand2); err != nil {
+		t.Fatal(err)
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	go func() {
+		defer wg.Done()
+		n, err := io.Copy(clientConn, bytes.NewBuffer(rand1))
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		n, err := io.Copy(serverConn, bytes.NewBuffer(rand2))
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.CopyN(clientReader, clientConn, numBytes); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.CopyN(serverReader, serverConn, numBytes); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	wg.Wait()
+
+	if bytes.Compare(clientReader.Bytes(), rand2) != 0 {
+		t.Fatal("client buffers not equal")
+	}
+	if bytes.Compare(serverReader.Bytes(), rand1) != 0 {
+		t.Fatal("server buffers not equal")
+	}
+}
+
+func BenchmarkRelayerBidirectionalReadWrite(t *testing.B) {
+	currentRand := int64(0)
+	getRand := func() *rand.Rand {
+		currentRand++
+		return rand.New(rand.NewSource(currentRand))
+	}
+
+	clientConn, serverConn, _, cleanup := getClientServerRelayer(t, getRand())
+	defer cleanup()
+
+	if err := clientConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+	if err := serverConn.Handshake(); err != nil {
+		t.Fatal(err)
+	}
+
+	numBytes := int64(10 * 1024 * 1024)
+
+	rand1 := make([]byte, numBytes)
+	rand2 := make([]byte, numBytes)
+
+	clientReader := &bytes.Buffer{}
+	serverReader := &bytes.Buffer{}
+
+	if _, err := io.ReadFull(getRand(), rand1); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(getRand(), rand2); err != nil {
+		t.Fatal(err)
+	}
+
+	wg := &sync.WaitGroup{}
+	wg.Add(4)
+
+	t.ResetTimer()
+
+	go func() {
+		defer wg.Done()
+		n, err := io.Copy(clientConn, bytes.NewBuffer(rand1))
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		n, err := io.Copy(serverConn, bytes.NewBuffer(rand2))
+		if err != nil {
+			t.Fatalf("copied %d bytes, error: %s", n, err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.CopyN(clientReader, clientConn, numBytes); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		if _, err := io.CopyN(serverReader, serverConn, numBytes); err != nil {
+			t.Fatal(err)
+		}
+	}()
+
+	wg.Wait()
+
+	if bytes.Compare(clientReader.Bytes(), rand2) != 0 {
+		t.Fatal("client buffers not equal")
+	}
+	if bytes.Compare(serverReader.Bytes(), rand1) != 0 {
+		t.Fatal("server buffers not equal")
 	}
 }
