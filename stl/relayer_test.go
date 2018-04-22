@@ -221,7 +221,7 @@ func BenchmarkRelayerBidirectionalReadWrite(t *testing.B) {
 		t.Fatal(err)
 	}
 
-	numBytes := int64(100 * 1024 * 1024)
+	numBytes := int64(1024 * 1024 * 1024)
 
 	rand1 := make([]byte, numBytes)
 	rand2 := make([]byte, numBytes)
