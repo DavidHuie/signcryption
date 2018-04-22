@@ -15,11 +15,12 @@ import (
 // ServerConnFetcher can fetch a server connection based on the client
 // topic and the server certificate.
 type ServerConnFetcher interface {
-	GetConn(topic []byte, cert *signcryption.Certificate) (net.Conn, error)
+	GetConn(topic []byte, serverCert *signcryption.Certificate) (net.Conn, error)
 }
 
 // SegmentProcessor processes a segment. This should be used for doing
-// out of band things, such as billing.
+// out of band things that depend on tracking the information in each
+// segment.
 type SegmentProcessor interface {
 	ProcessSegment(sender, reciever *signcryption.Certificate,
 		output *aal.SigncryptionOutput)
