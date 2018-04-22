@@ -114,7 +114,7 @@ func TestBidirectionalReadWrite(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(clientConn, bytes.NewBuffer(rand1))
+		n, err := clientConn.Write(rand1)
 		if err != nil {
 			t.Fatalf("copied %d bytes, error: %s", n, err)
 		}
@@ -122,7 +122,7 @@ func TestBidirectionalReadWrite(t *testing.T) {
 
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(serverConn, bytes.NewBuffer(rand2))
+		n, err := serverConn.Write(rand2)
 		if err != nil {
 			t.Fatalf("copied %d bytes, error: %s", n, err)
 		}
@@ -191,7 +191,7 @@ func BenchmarkBidirectionalReadWrite(t *testing.B) {
 
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(clientConn, bytes.NewBuffer(rand1))
+		n, err := clientConn.Write(rand1)
 		if err != nil {
 			t.Fatalf("copied %d bytes, error: %s", n, err)
 		}
@@ -199,7 +199,7 @@ func BenchmarkBidirectionalReadWrite(t *testing.B) {
 
 	go func() {
 		defer wg.Done()
-		n, err := io.Copy(serverConn, bytes.NewBuffer(rand2))
+		n, err := serverConn.Write(rand2)
 		if err != nil {
 			t.Fatalf("copied %d bytes, error: %s", n, err)
 		}

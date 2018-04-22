@@ -80,10 +80,11 @@ func validateServerResponse(challenge []byte, resp *handshakeResponse,
 	}
 
 	// Validate signature
-	sigSize := handshakeChallengeSize + len(resp.EncryptedSessionKey) + len(clientCert.ID)
+	sigSize := handshakeChallengeSize + len(resp.EncryptedSessionKey) + len(resp.EncryptedSessionKeyForRelayer) + len(clientCert.ID)
 	sigData := make([]byte, sigSize)
 	copy(sigData, challenge)
 	copy(sigData[len(resp.EncryptedSessionKey):], resp.EncryptedSessionKey)
+	copy(sigData[len(resp.EncryptedSessionKeyForRelayer):], resp.EncryptedSessionKeyForRelayer)
 	copy(sigData[len(clientCert.ID):], clientCert.ID)
 	sigHash := sha256.New()
 	sigHash.Write(sigData)
@@ -206,10 +207,11 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	}
 
 	// create signature
-	sigSize := len(req.Challenge) + len(response.EncryptedSessionKey) + len(clientCert.ID)
+	sigSize := len(req.Challenge) + len(response.EncryptedSessionKey) + len(response.EncryptedSessionKeyForRelayer) + len(clientCert.ID)
 	sigData := make([]byte, sigSize)
 	copy(sigData, req.Challenge)
 	copy(sigData[len(response.EncryptedSessionKey):], response.EncryptedSessionKey)
+	copy(sigData[len(response.EncryptedSessionKeyForRelayer):], response.EncryptedSessionKeyForRelayer)
 	copy(sigData[len(clientCert.ID):], clientCert.ID)
 	sigHash := sha256.New()
 	sigHash.Write(sigData)

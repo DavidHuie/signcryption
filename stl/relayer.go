@@ -1,7 +1,6 @@
 package stl
 
 import (
-	"bytes"
 	"encoding/binary"
 	"io"
 	"log"
@@ -177,7 +176,7 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	}
 
 	// relay data
-	if _, err := io.Copy(writer, bytes.NewBuffer(segmentBytes)); err != nil {
+	if _, err := writer.Write(segmentBytes); err != nil {
 		return false, errors.Wrapf(err, "error relaying segment onto writer")
 	}
 

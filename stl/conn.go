@@ -160,7 +160,7 @@ func writeHandshakeResponse(w io.Writer, response *handshakeResponse) error {
 	responseBuf := make([]byte, 8+numResponseBytes)
 	binary.LittleEndian.PutUint64(responseBuf, uint64(numResponseBytes))
 	copy(responseBuf[8:], responseBytes)
-	if _, err := io.Copy(w, bytes.NewBuffer(responseBuf)); err != nil {
+	if _, err := w.Write(responseBuf); err != nil {
 		return errors.Wrapf(err, "error writing handshake response")
 	}
 	return nil
@@ -208,7 +208,7 @@ func writeHandshakeRequest(w io.Writer, req *handshakeRequest) error {
 	copy(handshakeBuf[8:], requestBytes)
 
 	// Write request to connection
-	if _, err := io.Copy(w, bytes.NewBuffer(handshakeBuf)); err != nil {
+	if _, err := w.Write(handshakeBuf); err != nil {
 		return errors.Wrapf(err, "error writing client handshake request bytes to writer")
 	}
 
@@ -306,10 +306,11 @@ func (c *Conn) writeSegment(b []byte) error {
 
 	binary.LittleEndian.PutUint64(numBytesBytes, uint64(numBytes))
 
-	buf := bytes.NewBuffer(numBytesBytes)
-	buf.Write(outputBytes)
+	allOutput := make([]byte, len(numBytesBytes)+len(outputBytes))
+	copy(allOutput, numBytesBytes)
+	copy(allOutput[len(numBytesBytes):], outputBytes)
 
-	if _, err := io.Copy(c.conn, buf); err != nil {
+	if _, err := c.conn.Write(allOutput); err != nil {
 		return errors.Wrapf(err, "error writing segment to connection")
 	}
 
