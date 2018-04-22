@@ -61,7 +61,9 @@ type Conn struct {
 	aal             aal.AAL
 	readBuf         *bytes.Buffer
 	writtenSegments uint64
+	writtenBytes    uint64
 	readSegments    uint64
+	readBytes       uint64
 }
 
 // NewConn prepares a connection for use by a client.
@@ -289,9 +291,10 @@ func (c *Conn) Write(b []byte) (int, error) {
 }
 
 func (c *Conn) writeSegment(b []byte) error {
-	additionalData := make([]byte, len(c.sessionKey)+8)
+	additionalData := make([]byte, len(c.sessionKey)+8+8)
 	copy(additionalData, c.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.writtenSegments)
+	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.writtenBytes)
 
 	output, err := c.aal.Signcrypt(c.localCert, c.remoteCert, b, additionalData)
 	if err != nil {
@@ -310,10 +313,12 @@ func (c *Conn) writeSegment(b []byte) error {
 	copy(allOutput, numBytesBytes)
 	copy(allOutput[len(numBytesBytes):], outputBytes)
 
-	if _, err := c.conn.Write(allOutput); err != nil {
+	bytesWritten, err := c.conn.Write(allOutput)
+	if err != nil {
 		return errors.Wrapf(err, "error writing segment to connection")
 	}
 
+	c.writtenBytes += uint64(bytesWritten)
 	c.writtenSegments++
 
 	return nil
@@ -362,15 +367,17 @@ func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
 }
 
 func (c *Conn) readSegment() error {
-	segment, _, err := readSegment(c.conn)
+	segment, segmentBytes, err := readSegment(c.conn)
 	if err != nil {
 		return errors.Wrapf(err, "error reading segment")
 	}
 
 	// Prepare additional data
-	additionalData := make([]byte, sessionKeySize+8)
+	additionalData := make([]byte, sessionKeySize+8+8)
 	copy(additionalData, c.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
+	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes+4)
+	additionalData = make([]byte, sessionKeySize+8+8)
 
 	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
 		c.localCert, additionalData, segment)
@@ -383,6 +390,7 @@ func (c *Conn) readSegment() error {
 
 	c.readBuf.Write(pt)
 	c.readSegments++
+	c.readBytes += uint64(len(segmentBytes))
 
 	return nil
 }

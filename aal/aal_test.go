@@ -60,7 +60,7 @@ func TestP256Signcrypt(t *testing.T) {
 			t.Log(toBase64(output.R))
 			t.Error("invalid r")
 		}
-		if toBase64(output.Signature) != `vlT7hm0qDoP/LX4NGxD8rai+XZbQc1j4Asc8XjFKZ2o=` {
+		if toBase64(output.Signature) != `/W3BKrjDRkHwSJx57cIYNM/doTMtxQBlLc2EaHlZa1k=` {
 			t.Log(toBase64(output.Signature))
 			t.Error("invalid signature")
 		}
@@ -73,6 +73,16 @@ func TestP256Signcrypt(t *testing.T) {
 		}
 		if !valid {
 			t.Error("signature should be valid")
+		}
+	})
+
+	t.Run("should reject bad additional data", func(t *testing.T) {
+		valid, err := sc.Verify(source, dest, nil, output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if valid {
+			t.Error("signature should not be valid")
 		}
 	})
 

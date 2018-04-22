@@ -106,7 +106,6 @@ func (s *signcrypter) Signcrypt(sender *signcryption.Certificate,
 	// create tag
 	hash = s.hashCreator()
 	hash.Write(additionalData)
-	hash.Write(iv)
 	hash.Write(ciphertext)
 	hash.Write(xR.Bytes())
 	hash.Write(sender.ID)
@@ -115,9 +114,9 @@ func (s *signcrypter) Signcrypt(sender *signcryption.Certificate,
 	t := new(big.Int).SetBytes(hash.Sum(nil))
 
 	// create signature
-	sig := new(big.Int).ModInverse(t, prime)
+	sig := new(big.Int).ModInverse(t, nMod)
 	sig.Mul(sig, p)
-	sig.Mod(sig, prime)
+	sig.Mod(sig, nMod)
 
 	return &SigncryptionOutput{
 		R:          rMarshaled,
@@ -137,24 +136,19 @@ func (s *signcrypter) Verify(sender, recipient *signcryption.Certificate, additi
 	// parse r
 	xR, yR := elliptic.Unmarshal(s.curve, output.R)
 
-	// extract IV
-	iv := output.Ciphertext[:aes.BlockSize]
-	ciphertext := output.Ciphertext[aes.BlockSize:]
-
 	// compute tag
 	hash := s.hashCreator()
 	hash.Write(additionalData)
-	hash.Write(iv)
-	hash.Write(ciphertext)
+	hash.Write(output.Ciphertext)
 	hash.Write(xR.Bytes())
 	hash.Write(sender.ID)
 	hash.Write(yR.Bytes())
 	hash.Write(recipient.ID)
-	t := hash.Sum(nil)
+	t := new(big.Int).SetBytes(hash.Sum(nil))
 
 	// compute verification equation #1
 	mX, mY := s.curve.ScalarBaseMult(output.Signature)
-	vX1, vY1 := s.curve.ScalarMult(mX, mY, t)
+	vX1, vY1 := s.curve.ScalarMult(mX, mY, t.Bytes())
 
 	// compute verification equation #2
 	vX2, vY2 := s.curve.Add(xR, yR, sender.EncryptionPublicKey.X,
@@ -163,7 +157,7 @@ func (s *signcrypter) Verify(sender, recipient *signcryption.Certificate, additi
 	xEqual := subtle.ConstantTimeCompare(vX1.Bytes(), vX2.Bytes())
 	yEqual := subtle.ConstantTimeCompare(vY1.Bytes(), vY2.Bytes())
 
-	return (xEqual == 0) && (yEqual == 0), nil
+	return (xEqual == 1) && (yEqual == 1), nil
 }
 
 type vmsg struct {
