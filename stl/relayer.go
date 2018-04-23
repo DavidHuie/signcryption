@@ -119,7 +119,9 @@ func (r *Relayer) processHandshake() (bool, error) {
 	}
 
 	// Verify response
-	validResponse, err := validateServerResponse(request.Challenge, response,
+	validResponse, err := validateServerResponse(request.Challenge,
+		request.Topic,
+		response,
 		r.clientCert, r.serverCert)
 	if err != nil {
 		return false, errors.Wrapf(err, "error validating server response")
@@ -161,8 +163,8 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	// validate segment
 	additionalData := make([]byte, sessionKeySize+8+8)
 	copy(additionalData, r.sessionKey)
-	binary.LittleEndian.PutUint64(additionalData[len(r.sessionKey):], *counter)
-	binary.LittleEndian.PutUint64(additionalData[len(r.sessionKey)+8:], *bytesProcessed)
+	binary.BigEndian.PutUint64(additionalData[len(r.sessionKey):], *counter)
+	binary.BigEndian.PutUint64(additionalData[len(r.sessionKey)+8:], *bytesProcessed)
 
 	valid, err := r.config.Signcrypter.Verify(senderCert, recipientCert,
 		additionalData, segment)

@@ -140,7 +140,7 @@ func readHandshakeRequest(r io.Reader) (*handshakeRequest, error) {
 	if _, err := io.ReadFull(r, requestSizeBytes); err != nil {
 		return nil, errors.Wrapf(err, "error reading handshake request size")
 	}
-	requestSize := binary.LittleEndian.Uint64(requestSizeBytes)
+	requestSize := binary.BigEndian.Uint64(requestSizeBytes)
 	requestBytes := make([]byte, requestSize)
 	if _, err := io.ReadFull(r, requestBytes); err != nil {
 		return nil, errors.Wrapf(err, "error reading handshake request bytes")
@@ -160,7 +160,7 @@ func writeHandshakeResponse(w io.Writer, response *handshakeResponse) error {
 	}
 	numResponseBytes := len(responseBytes)
 	responseBuf := make([]byte, 8+numResponseBytes)
-	binary.LittleEndian.PutUint64(responseBuf, uint64(numResponseBytes))
+	binary.BigEndian.PutUint64(responseBuf, uint64(numResponseBytes))
 	copy(responseBuf[8:], responseBytes)
 	if _, err := w.Write(responseBuf); err != nil {
 		return errors.Wrapf(err, "error writing handshake response")
@@ -206,7 +206,7 @@ func writeHandshakeRequest(w io.Writer, req *handshakeRequest) error {
 	numRequestBytes := len(requestBytes)
 
 	handshakeBuf := make([]byte, 8+numRequestBytes)
-	binary.LittleEndian.PutUint64(handshakeBuf, uint64(numRequestBytes))
+	binary.BigEndian.PutUint64(handshakeBuf, uint64(numRequestBytes))
 	copy(handshakeBuf[8:], requestBytes)
 
 	// Write request to connection
@@ -222,7 +222,7 @@ func readHandshakeResponse(r io.Reader) (*handshakeResponse, error) {
 	if _, err := io.ReadFull(r, responseSizeBytes); err != nil {
 		return nil, errors.Wrapf(err, "error reading handshake response size")
 	}
-	responseSize := binary.LittleEndian.Uint64(responseSizeBytes)
+	responseSize := binary.BigEndian.Uint64(responseSizeBytes)
 	responseBytes := make([]byte, responseSize)
 	if _, err := io.ReadFull(r, responseBytes); err != nil {
 		return nil, errors.Wrapf(err, "error reading handshake response bytes")
@@ -293,8 +293,8 @@ func (c *Conn) Write(b []byte) (int, error) {
 func (c *Conn) writeSegment(b []byte) error {
 	additionalData := make([]byte, len(c.sessionKey)+8+8)
 	copy(additionalData, c.sessionKey)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.writtenSegments)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.writtenBytes)
+	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey):], c.writtenSegments)
+	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.writtenBytes)
 
 	output, err := c.aal.Signcrypt(c.localCert, c.remoteCert, b, additionalData)
 	if err != nil {
@@ -307,7 +307,7 @@ func (c *Conn) writeSegment(b []byte) error {
 	numBytes := len(outputBytes)
 	numBytesBytes := make([]byte, 8)
 
-	binary.LittleEndian.PutUint64(numBytesBytes, uint64(numBytes))
+	binary.BigEndian.PutUint64(numBytesBytes, uint64(numBytes))
 
 	allOutput := make([]byte, len(numBytesBytes)+len(outputBytes))
 	copy(allOutput, numBytesBytes)
@@ -346,7 +346,7 @@ func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
 	if _, err := io.ReadFull(r, numBytesBytes); err != nil {
 		return nil, nil, errors.Wrapf(err, "error reading segment num bytes")
 	}
-	numBytes := binary.LittleEndian.Uint64(numBytesBytes)
+	numBytes := binary.BigEndian.Uint64(numBytesBytes)
 
 	segmentBytes := make([]byte, numBytes)
 	if _, err := io.ReadFull(r, segmentBytes); err != nil {
@@ -375,8 +375,8 @@ func (c *Conn) readSegment() error {
 	// Prepare additional data
 	additionalData := make([]byte, sessionKeySize+8+8)
 	copy(additionalData, c.sessionKey)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes)
+	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
+	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes)
 
 	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
 		c.localCert, additionalData, segment)

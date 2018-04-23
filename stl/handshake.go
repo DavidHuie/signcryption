@@ -69,7 +69,7 @@ func (c *clientHandshaker) generateRequest() (*handshakeRequest, error) {
 	}, nil
 }
 
-func validateServerResponse(challenge []byte, resp *handshakeResponse,
+func validateServerResponse(challenge, topic []byte, resp *handshakeResponse,
 	clientCert, serverCert *signcryption.Certificate) (bool, error) {
 	serverCert, err := signcryption.UnmarshalCertificate(resp.ServerCertificate)
 	if err != nil {
@@ -80,14 +80,12 @@ func validateServerResponse(challenge []byte, resp *handshakeResponse,
 	}
 
 	// Validate signature
-	sigSize := handshakeChallengeSize + len(resp.EncryptedSessionKey) + len(resp.EncryptedSessionKeyForRelayer) + len(clientCert.ID)
-	sigData := make([]byte, sigSize)
-	copy(sigData, challenge)
-	copy(sigData[len(resp.EncryptedSessionKey):], resp.EncryptedSessionKey)
-	copy(sigData[len(resp.EncryptedSessionKeyForRelayer):], resp.EncryptedSessionKeyForRelayer)
-	copy(sigData[len(clientCert.ID):], clientCert.ID)
 	sigHash := sha256.New()
-	sigHash.Write(sigData)
+	sigHash.Write(challenge)
+	sigHash.Write(topic)
+	sigHash.Write(resp.EncryptedSessionKey)
+	sigHash.Write(resp.EncryptedSessionKeyForRelayer)
+	sigHash.Write(clientCert.ID)
 
 	validSig := ecdsa.Verify(
 		serverCert.HandshakePublicKey,
@@ -114,7 +112,7 @@ func getSessionKey(ciphertext []byte, privateKey *ecdsa.PrivateKey,
 }
 
 func (c *clientHandshaker) processServerResponse(resp *handshakeResponse) (bool, error) {
-	valid, err := validateServerResponse(c.challenge, resp, c.clientCert, c.serverCert)
+	valid, err := validateServerResponse(c.challenge, c.topic, resp, c.clientCert, c.serverCert)
 	if err != nil {
 		return false, errors.Wrapf(err, "error validating server response")
 	}
@@ -207,14 +205,12 @@ func (s *serverHandshaker) processRequest(req *handshakeRequest) (*handshakeResp
 	}
 
 	// create signature
-	sigSize := len(req.Challenge) + len(response.EncryptedSessionKey) + len(response.EncryptedSessionKeyForRelayer) + len(clientCert.ID)
-	sigData := make([]byte, sigSize)
-	copy(sigData, req.Challenge)
-	copy(sigData[len(response.EncryptedSessionKey):], response.EncryptedSessionKey)
-	copy(sigData[len(response.EncryptedSessionKeyForRelayer):], response.EncryptedSessionKeyForRelayer)
-	copy(sigData[len(clientCert.ID):], clientCert.ID)
 	sigHash := sha256.New()
-	sigHash.Write(sigData)
+	sigHash.Write(req.Challenge)
+	sigHash.Write(req.Topic)
+	sigHash.Write(response.EncryptedSessionKey)
+	sigHash.Write(response.EncryptedSessionKeyForRelayer)
+	sigHash.Write(clientCert.ID)
 
 	sigR, sigS, err := ecdsa.Sign(s.rand, s.serverCert.HandshakePrivateKey, sigHash.Sum(nil))
 	if err != nil {
