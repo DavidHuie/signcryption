@@ -36,6 +36,7 @@ P521, AES counter mode encryption, and SHA-256 for generating keys.
 A transport layer similar to TLS that uses AAL signcryption. Used
 plainly, STL offers the same guarantees as TLS with client
 authentication. However, STL also includes support for a "relayer,"
-which can sit in between a client/server connection, cryptographically
-verifying the origin and destination of each traffic segment. A
-relayer can provide NAT traversal, firewalling, and other services.
+which is untrusted third party proxy that can sit in between a
+client/server connection, cryptographically verifying the origin and
+destination of each traffic segment. A relayer can provide NAT
+traversal, firewalling, and other services.
