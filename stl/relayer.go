@@ -23,7 +23,7 @@ type ServerConnFetcher interface {
 // segment.
 type SegmentProcessor interface {
 	ProcessSegment(sender, reciever *signcryption.Certificate,
-		output *aal.SigncryptionOutput)
+		segment []byte, totalBytes uint64)
 }
 
 // RelayerConfig represents configuration for a Relayer.
@@ -35,9 +35,10 @@ type RelayerConfig struct {
 	Processor   SegmentProcessor
 }
 
-// Relayer stands in between a client/server stl connection. A Relayer
-// can provide service discovery, metrics, and other services at this
-// layer.
+// Relayer stands in between a client/server connection. A client
+// connection connects directly to a relayer and is then matched with
+// the appropriate server connection. A Relayer can provide NAT
+// traversal, firewalling, and other services at this layer.
 type Relayer struct {
 	sync.Mutex
 	client net.Conn
@@ -47,6 +48,7 @@ type Relayer struct {
 	closed                         bool
 	server                         net.Conn
 	clientSegments, serverSegments uint64
+	clientBytes, serverBytes       uint64
 	sessionKey                     []byte
 	clientCert                     *signcryption.Certificate
 	serverCert                     *signcryption.Certificate
@@ -150,16 +152,17 @@ func (r *Relayer) processHandshake() (bool, error) {
 
 func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	senderCert, recipientCert *signcryption.Certificate,
-	processor SegmentProcessor, counter *uint64) (bool, error) {
+	processor SegmentProcessor, counter, bytesProcessed *uint64) (bool, error) {
 	segment, segmentBytes, err := readSegment(reader)
 	if err != nil {
 		return false, errors.Wrapf(err, "error reading segment from reader")
 	}
 
 	// validate segment
-	additionalData := make([]byte, sessionKeySize+8)
+	additionalData := make([]byte, sessionKeySize+8+8)
 	copy(additionalData, r.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(r.sessionKey):], *counter)
+	binary.LittleEndian.PutUint64(additionalData[len(r.sessionKey)+8:], *bytesProcessed)
 
 	valid, err := r.config.Signcrypter.Verify(senderCert, recipientCert,
 		additionalData, segment)
@@ -170,18 +173,19 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 		return false, nil
 	}
 
-	// inform processors
-	// TODO: maybe do this async?
-	if processor != nil {
-		processor.ProcessSegment(senderCert, recipientCert, segment)
-	}
-
 	// relay data
-	if _, err := writer.Write(segmentBytes); err != nil {
+	written, err := writer.Write(segmentBytes)
+	if err != nil {
 		return false, errors.Wrapf(err, "error relaying segment onto writer")
 	}
 
 	*counter++
+	*bytesProcessed += uint64(written)
+
+	if processor != nil {
+		go processor.ProcessSegment(senderCert, recipientCert,
+			segmentBytes, *bytesProcessed)
+	}
 
 	return true, nil
 }
@@ -215,7 +219,8 @@ func (r *Relayer) Start() error {
 			}
 
 			valid, err := r.processSegment(r.client, r.server, r.clientCert,
-				r.serverCert, r.config.Processor, &r.clientSegments)
+				r.serverCert, r.config.Processor, &r.clientSegments,
+				&r.clientBytes)
 			if err != nil {
 				log.Printf("error processing segment: %s", err)
 				break
@@ -236,7 +241,8 @@ func (r *Relayer) Start() error {
 			}
 
 			valid, err := r.processSegment(r.server, r.client, r.serverCert,
-				r.clientCert, r.config.Processor, &r.serverSegments)
+				r.clientCert, r.config.Processor, &r.serverSegments,
+				&r.serverBytes)
 			if err != nil {
 				log.Printf("error processing segment: %s", err)
 				break

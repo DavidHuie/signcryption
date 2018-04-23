@@ -376,8 +376,7 @@ func (c *Conn) readSegment() error {
 	additionalData := make([]byte, sessionKeySize+8+8)
 	copy(additionalData, c.sessionKey)
 	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
-	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes+4)
-	additionalData = make([]byte, sessionKeySize+8+8)
+	binary.LittleEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes)
 
 	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
 		c.localCert, additionalData, segment)

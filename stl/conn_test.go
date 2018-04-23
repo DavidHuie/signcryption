@@ -131,14 +131,14 @@ func TestBidirectionalReadWrite(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		if _, err := io.CopyN(clientReader, clientConn, numBytes); err != nil {
-			t.Fatal(err)
+			panic(err)
 		}
 	}()
 
 	go func() {
 		defer wg.Done()
 		if _, err := io.CopyN(serverReader, serverConn, numBytes); err != nil {
-			t.Fatal(err)
+			panic(err)
 		}
 	}()
 
@@ -169,7 +169,7 @@ func BenchmarkBidirectionalReadWrite(t *testing.B) {
 		t.Fatal(err)
 	}
 
-	numBytes := int64(100 * 1024 * 1024)
+	numBytes := int64(1 * 1024 * 1024)
 
 	rand1 := make([]byte, numBytes)
 	rand2 := make([]byte, numBytes)
