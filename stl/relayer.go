@@ -185,7 +185,7 @@ func (r *Relayer) processSegment(reader io.Reader, writer io.Writer,
 	*bytesProcessed += uint64(written)
 
 	if processor != nil {
-		go processor.ProcessSegment(senderCert, recipientCert,
+		processor.ProcessSegment(senderCert, recipientCert,
 			segmentBytes, *bytesProcessed)
 	}
 
