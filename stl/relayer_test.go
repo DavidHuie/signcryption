@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/DavidHuie/signcryption"
-	"github.com/DavidHuie/signcryption/aal"
+	"github.com/DavidHuie/signcryption/aai"
 	"github.com/pkg/errors"
 )
 
@@ -84,7 +84,7 @@ func getClientServerRelayer(t testing.TB, r io.Reader) (*Conn, *Conn, *Relayer, 
 			Verifier:    verifier,
 			ConnFetcher: fetcher,
 			RelayerCert: relayerCert,
-			Signcrypter: aal.NewP256(),
+			Signcrypter: aai.NewP256(),
 		})
 
 		if err := relayer.Start(); err != nil {

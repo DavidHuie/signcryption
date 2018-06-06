@@ -1,4 +1,4 @@
-package aal
+package aai
 
 import (
 	"crypto/aes"
@@ -15,9 +15,9 @@ import (
 	"github.com/DavidHuie/signcryption"
 )
 
-// AAL represents all of the different functions possible with the AAL
+// AAI represents all of the different functions possible with the AAI
 // signcryption scheme.
-type AAL interface {
+type AAI interface {
 	Signcrypt(sender *signcryption.Certificate, recipient *signcryption.Certificate,
 		plaintext, additionalData []byte) (*SigncryptionOutput, error)
 	Verify(sender, recipient *signcryption.Certificate,
@@ -224,15 +224,15 @@ func (s *signcrypter) Unsigncrypt(sender *signcryption.Certificate, recipient *s
 	return plaintext, true, nil
 }
 
-// NewP256 returns an AAL instance based on the elliptic curve
+// NewP256 returns an AAI instance based on the elliptic curve
 // P256. The instance uses AES-CTR-128 for encrypting and SHA-256 for
 // generating keys. This signcryption scheme provides security at the
 // 128-bit level.
-func NewP256() AAL {
+func NewP256() AAI {
 	return newP256(rand.Reader)
 }
 
-func newP256(rand io.Reader) AAL {
+func newP256(rand io.Reader) AAI {
 	return &signcrypter{
 		securityLevel: 128,
 		curve:         elliptic.P256(),
@@ -242,15 +242,15 @@ func newP256(rand io.Reader) AAL {
 	}
 }
 
-// NewP521 returns an AAL instance based on the elliptic curve
+// NewP521 returns an AAI instance based on the elliptic curve
 // P521. The signcrypter uses AES-CTR-512 for encrypting and SHA-512
 // for generating keys. This signcryption scheme provides security at
 // the 256-bit level.
-func NewP521() AAL {
+func NewP521() AAI {
 	return newP521(rand.Reader)
 }
 
-func newP521(rand io.Reader) AAL {
+func newP521(rand io.Reader) AAI {
 	return &signcrypter{
 		securityLevel: 256,
 		curve:         elliptic.P521(),

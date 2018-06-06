@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/DavidHuie/signcryption"
-	"github.com/DavidHuie/signcryption/aal"
+	"github.com/DavidHuie/signcryption/aai"
 	"github.com/pkg/errors"
 	"github.com/vmihailenco/msgpack"
 )
@@ -58,7 +58,7 @@ type Conn struct {
 	sessionKey      []byte
 	remoteCert      *signcryption.Certificate
 	localCert       *signcryption.Certificate
-	aal             aal.AAL
+	aai             aai.AAI
 	readBuf         *bytes.Buffer
 	writtenSegments uint64
 	writtenBytes    uint64
@@ -73,7 +73,7 @@ func NewConn(c net.Conn, config *ClientConfig) *Conn {
 		clientConfig: config,
 		remoteCert:   config.ServerCertificate,
 		localCert:    config.ClientCertificate,
-		aal:          aal.NewP256(),
+		aai:          aai.NewP256(),
 		readBuf:      &bytes.Buffer{},
 	}
 }
@@ -85,7 +85,7 @@ func NewServerConn(c net.Conn, config *ServerConfig) *Conn {
 		serverConfig: config,
 		readBuf:      &bytes.Buffer{},
 		localCert:    config.ServerCertificate,
-		aal:          aal.NewP256(),
+		aai:          aai.NewP256(),
 	}
 }
 
@@ -296,7 +296,7 @@ func (c *Conn) writeSegment(b []byte) error {
 	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey):], c.writtenSegments)
 	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.writtenBytes)
 
-	output, err := c.aal.Signcrypt(c.localCert, c.remoteCert, b, additionalData)
+	output, err := c.aai.Signcrypt(c.localCert, c.remoteCert, b, additionalData)
 	if err != nil {
 		return errors.Wrapf(err, "error signcrypting segment")
 	}
@@ -341,7 +341,7 @@ func (c *Conn) Read(b []byte) (int, error) {
 	return c.readBuf.Read(b)
 }
 
-func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
+func readSegment(r io.Reader) (*aai.SigncryptionOutput, []byte, error) {
 	numBytesBytes := make([]byte, 8)
 	if _, err := io.ReadFull(r, numBytesBytes); err != nil {
 		return nil, nil, errors.Wrapf(err, "error reading segment num bytes")
@@ -353,7 +353,7 @@ func readSegment(r io.Reader) (*aal.SigncryptionOutput, []byte, error) {
 		return nil, nil, errors.Wrapf(err, "error reading segment bytes")
 	}
 
-	var segment *aal.SigncryptionOutput
+	var segment *aai.SigncryptionOutput
 	if err := msgpack.Unmarshal(segmentBytes, &segment); err != nil {
 		return nil, nil, errors.Wrapf(err, "error unmarshaling segment")
 	}
@@ -378,7 +378,7 @@ func (c *Conn) readSegment() error {
 	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey):], c.readSegments)
 	binary.BigEndian.PutUint64(additionalData[len(c.sessionKey)+8:], c.readBytes)
 
-	pt, valid, err := c.aal.Unsigncrypt(c.remoteCert,
+	pt, valid, err := c.aai.Unsigncrypt(c.remoteCert,
 		c.localCert, additionalData, segment)
 	if err != nil {
 		return errors.Wrapf(err, "error unsigncrypting segment")

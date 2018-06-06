@@ -8,7 +8,7 @@ import (
 	"sync"
 
 	"github.com/DavidHuie/signcryption"
-	"github.com/DavidHuie/signcryption/aal"
+	"github.com/DavidHuie/signcryption/aai"
 	"github.com/pkg/errors"
 )
 
@@ -31,7 +31,7 @@ type RelayerConfig struct {
 	Verifier    SessionVerifier
 	ConnFetcher ServerConnFetcher
 	RelayerCert *signcryption.Certificate
-	Signcrypter aal.AAL
+	Signcrypter aai.AAI
 	Processor   SegmentProcessor
 }
 

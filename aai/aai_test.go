@@ -1,4 +1,4 @@
-package aal
+package aai
 
 import (
 	"encoding/base64"
